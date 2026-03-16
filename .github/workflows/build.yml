@@ -69,22 +69,23 @@ jobs:
           REPO="${{ github.repository }}"
           SOURCE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/jellyfin-plugin-xray_${VERSION}.zip"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          CHECKSUM="${{ env.checksum }}"
 
           jq --arg version "${VERSION}" \
              --arg url "${SOURCE_URL}" \
-             --arg checksum "${{ env.checksum }}" \
+             --arg checksum "${CHECKSUM}" \
              --arg ts "${TIMESTAMP}" \
-             '.[0].versions[0] |= {
+             '.[0].versions[0] = {
                version: $version,
-               changelog: .changelog,
-               targetAbi: .targetAbi,
+               changelog: "See release notes.",
+               targetAbi: "10.11.0.0",
                sourceUrl: $url,
                checksum: $checksum,
                timestamp: $ts
              }' manifest.json > manifest.tmp.json
 
           mv manifest.tmp.json manifest.json
-          echo "Updated manifest.json"
+          echo "Updated manifest.json:"
           cat manifest.json
 
       - name: Commit updated manifest
