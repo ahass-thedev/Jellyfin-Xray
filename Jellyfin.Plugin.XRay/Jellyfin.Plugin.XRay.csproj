@@ -18,14 +18,13 @@
     <EmbeddedResource Include="ClientScript\xray-overlay.js" />
   </ItemGroup>
 
-  <!-- Jellyfin references — CopyLocal false so they are not bundled into the zip -->
+  <!-- Jellyfin references — correct package names on nuget.org, CopyLocal false so not bundled -->
   <ItemGroup>
     <PackageReference Include="Jellyfin.Model" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
-    <PackageReference Include="MediaBrowser.Common" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
-    <PackageReference Include="MediaBrowser.Controller" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
   </ItemGroup>
 
-  <!-- ImageSharp for trickplay sprite splitting (3.1.6 fixes known CVEs) -->
+  <!-- ImageSharp for trickplay sprite splitting -->
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
   </ItemGroup>
