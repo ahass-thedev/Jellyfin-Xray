@@ -20,16 +20,14 @@
 
   <!-- Jellyfin references — CopyLocal false so they are not bundled into the zip -->
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Model" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
-    <PackageReference Include="MediaBrowser.Common" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
-    <PackageReference Include="MediaBrowser.Controller" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="Jellyfin.Model" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="MediaBrowser.Common" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="MediaBrowser.Controller" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
   </ItemGroup>
 
-  <!-- ImageSharp for trickplay sprite splitting (MIT licensed) -->
+  <!-- ImageSharp for trickplay sprite splitting (3.1.6 fixes known CVEs) -->
   <ItemGroup>
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.4" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
   </ItemGroup>
-
-  <!-- System.Text.Json is included in net8.0 runtime — no extra package needed -->
 
 </Project>
