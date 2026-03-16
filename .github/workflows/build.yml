@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: read
 
     steps:
       - name: Checkout
@@ -20,6 +21,15 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Authenticate to GitHub Packages
+        run: |
+          dotnet nuget add source \
+            "https://nuget.pkg.github.com/jellyfin/index.json" \
+            --name jellyfin-github \
+            --username github-token \
+            --password "${{ secrets.GITHUB_TOKEN }}" \
+            --store-password-in-clear-text
 
       - name: Get version from tag
         id: version
@@ -70,7 +80,6 @@ jobs:
           SOURCE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/jellyfin-plugin-xray_${VERSION}.zip"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Update the first version entry in manifest.json
           jq --arg version "${VERSION}" \
              --arg url "${SOURCE_URL}" \
              --arg checksum "${{ env.checksum }}" \
