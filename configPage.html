@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>X-Ray</title>
+</head>
+<body>
+<div id="XRayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+  <div data-role="content">
+    <div class="content-primary">
+
+      <form id="XRayConfigForm">
+        <div class="sectionTitleContainer flex align-items-center">
+          <h2 class="sectionTitle">X-Ray Settings</h2>
+        </div>
+
+        <!-- Sidecar -->
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="SidecarUrl">Python sidecar URL</label>
+          <input id="SidecarUrl" name="SidecarUrl" type="text" class="emby-input" />
+          <div class="fieldDescription">Address of the face recognition sidecar process. Default: http://localhost:8756</div>
+        </div>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label class="emby-checkbox-label">
+            <input id="AutoStartSidecar" name="AutoStartSidecar" type="checkbox" class="emby-checkbox" />
+            <span>Auto-start sidecar on Jellyfin startup</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Uncheck if you manage the sidecar as a separate service (e.g. systemd).
+          </div>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="PythonPath">Python executable path (optional)</label>
+          <input id="PythonPath" name="PythonPath" type="text" class="emby-input" />
+          <div class="fieldDescription">Leave blank to use python3 from PATH. E.g. /usr/bin/python3</div>
+        </div>
+
+        <!-- Face matching -->
+        <div class="sectionTitleContainer" style="margin-top: 1.5em;">
+          <h2 class="sectionTitle">Face matching</h2>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="FaceMatchTolerance">Match tolerance (0.0–1.0)</label>
+          <input id="FaceMatchTolerance" name="FaceMatchTolerance" type="number" step="0.05" min="0.3" max="0.9" class="emby-input" />
+          <div class="fieldDescription">Lower = stricter matching, fewer false positives. Recommended: 0.50–0.60</div>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="FaceConfidenceThreshold">Confidence threshold (0.0–1.0)</label>
+          <input id="FaceConfidenceThreshold" name="FaceConfidenceThreshold" type="number" step="0.05" min="0.1" max="1.0" class="emby-input" />
+          <div class="fieldDescription">Minimum confidence to report a match. Recommended: 0.55–0.70</div>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="TrickplayIntervalSeconds">Trickplay interval (seconds)</label>
+          <input id="TrickplayIntervalSeconds" name="TrickplayIntervalSeconds" type="number" step="1" min="5" max="60" class="emby-input" />
+          <div class="fieldDescription">Should match your Jellyfin trickplay generation interval. Default: 10</div>
+        </div>
+
+        <!-- Overlay -->
+        <div class="sectionTitleContainer" style="margin-top: 1.5em;">
+          <h2 class="sectionTitle">Overlay</h2>
+        </div>
+
+        <div class="checkboxContainer">
+          <label class="emby-checkbox-label">
+            <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" class="emby-checkbox" />
+            <span>Enable overlay in player</span>
+          </label>
+        </div>
+
+        <div class="inputContainer">
+          <label class="inputLabel inputLabelUnfocused" for="MaxActorsDisplayed">Max actors displayed</label>
+          <input id="MaxActorsDisplayed" name="MaxActorsDisplayed" type="number" step="1" min="1" max="8" class="emby-input" />
+          <div class="fieldDescription">Maximum number of actor cards shown at once. Default: 4</div>
+        </div>
+
+        <div>
+          <button id="SaveBtn" class="raised button-submit block emby-button">Save</button>
+        </div>
+      </form>
+
+      <!-- Sidecar status check -->
+      <div class="sectionTitleContainer" style="margin-top: 2em;">
+        <h2 class="sectionTitle">Sidecar status</h2>
+      </div>
+      <div id="SidecarStatus" style="margin-bottom: 1em; color: gray;">Checking…</div>
+      <button id="CheckSidecarBtn" class="raised emby-button">Check sidecar</button>
+
+    </div>
+  </div>
+
+  <script type="text/javascript">
+    var XRayConfig = {
+      pluginId: "0344d9cc-bd3d-4f28-b6a0-314671628f84",
+
+      load: function(page) {
+        ApiClient.getPluginConfiguration(XRayConfig.pluginId).then(function(config) {
+          page.querySelector("#SidecarUrl").value = config.SidecarUrl || "http://localhost:8756";
+          page.querySelector("#AutoStartSidecar").checked = config.AutoStartSidecar !== false;
+          page.querySelector("#PythonPath").value = config.PythonPath || "";
+          page.querySelector("#FaceMatchTolerance").value = config.FaceMatchTolerance ?? 0.55;
+          page.querySelector("#FaceConfidenceThreshold").value = config.FaceConfidenceThreshold ?? 0.60;
+          page.querySelector("#TrickplayIntervalSeconds").value = config.TrickplayIntervalSeconds ?? 10;
+          page.querySelector("#OverlayEnabled").checked = config.OverlayEnabled !== false;
+          page.querySelector("#MaxActorsDisplayed").value = config.MaxActorsDisplayed ?? 4;
+        });
+      },
+
+      save: function(page) {
+        ApiClient.getPluginConfiguration(XRayConfig.pluginId).then(function(config) {
+          config.SidecarUrl = page.querySelector("#SidecarUrl").value;
+          config.AutoStartSidecar = page.querySelector("#AutoStartSidecar").checked;
+          config.PythonPath = page.querySelector("#PythonPath").value;
+          config.FaceMatchTolerance = parseFloat(page.querySelector("#FaceMatchTolerance").value);
+          config.FaceConfidenceThreshold = parseFloat(page.querySelector("#FaceConfidenceThreshold").value);
+          config.TrickplayIntervalSeconds = parseInt(page.querySelector("#TrickplayIntervalSeconds").value);
+          config.OverlayEnabled = page.querySelector("#OverlayEnabled").checked;
+          config.MaxActorsDisplayed = parseInt(page.querySelector("#MaxActorsDisplayed").value);
+          ApiClient.updatePluginConfiguration(XRayConfig.pluginId, config).then(function() {
+            Dashboard.processPluginConfigurationUpdateResult();
+          });
+        });
+      },
+
+      checkSidecar: function(page) {
+        var url = page.querySelector("#SidecarUrl").value || "http://localhost:8756";
+        var status = page.querySelector("#SidecarStatus");
+        status.textContent = "Checking…";
+        status.style.color = "gray";
+        fetch(url + "/health").then(function(r) {
+          if (r.ok) {
+            status.textContent = "Sidecar is running";
+            status.style.color = "green";
+          } else {
+            status.textContent = "Sidecar returned HTTP " + r.status;
+            status.style.color = "orange";
+          }
+        }).catch(function() {
+          status.textContent = "Sidecar unreachable at " + url;
+          status.style.color = "red";
+        });
+      }
+    };
+
+    document.querySelector("#XRayConfigPage")
+      .addEventListener("pageshow", function() { XRayConfig.load(this); });
+    document.querySelector("#SaveBtn")
+      .addEventListener("click", function() {
+        XRayConfig.save(document.querySelector("#XRayConfigPage"));
+      });
+    document.querySelector("#CheckSidecarBtn")
+      .addEventListener("click", function() {
+        XRayConfig.checkSidecar(document.querySelector("#XRayConfigPage"));
+      });
+  </script>
+</div>
+</body>
+</html>

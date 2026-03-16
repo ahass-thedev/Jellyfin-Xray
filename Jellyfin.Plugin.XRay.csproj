@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.XRay</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.XRay</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Version>1.0.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Embed the config page HTML and the JS overlay as resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="ClientScript\xray-overlay.js" />
+  </ItemGroup>
+
+  <!-- Jellyfin references — CopyLocal false so they are not bundled into the zip -->
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Model" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="MediaBrowser.Common" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="MediaBrowser.Controller" Version="10.9.0" CopyLocalLockFileAssemblies="false" />
+  </ItemGroup>
+
+  <!-- ImageSharp for trickplay sprite splitting (MIT licensed) -->
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.4" />
+  </ItemGroup>
+
+  <!-- System.Text.Json is included in net8.0 runtime — no extra package needed -->
+
+</Project>

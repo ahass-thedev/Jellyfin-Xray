@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "3f4a2b1c-8e7d-4f6a-9b5c-2d1e0f3a4b5c",
+    "name": "X-Ray",
+    "description": "Shows actor information in the video player while watching, similar to Amazon Prime Video X-Ray. Uses facial recognition to identify which actors are on screen in real time.",
+    "overview": "X-Ray analyses your library's trickplay images to build a map of which actors appear at which timestamps. During playback, actor cards with photos and character names are displayed at the top of the screen.",
+    "owner": "jellyfin-plugin-xray",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release.",
+        "targetAbi": "10.9.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/jellyfin-plugin-xray/releases/download/v1.0.0/jellyfin-plugin-xray_1.0.0.0.zip",
+        "checksum": "PLACEHOLDER_UPDATE_AFTER_BUILD",
+        "timestamp": "2025-01-01T00:00:00Z"
+      }
+    ]
+  }
+]
