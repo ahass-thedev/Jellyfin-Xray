@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>Jellyfin.Plugin.XRay</AssemblyName>
     <RootNamespace>Jellyfin.Plugin.XRay</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -20,8 +20,8 @@
 
   <!-- Jellyfin references — correct package names on nuget.org, CopyLocal false so not bundled -->
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Model" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.9.11" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.6" CopyLocalLockFileAssemblies="false" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.6" CopyLocalLockFileAssemblies="false" />
   </ItemGroup>
 
   <!-- ImageSharp for trickplay sprite splitting -->
