@@ -60,7 +60,7 @@ public class SidecarClient : IDisposable
                 .ReadFromJsonAsync<MatchResponse>(cancellationToken: ct)
                 .ConfigureAwait(false);
 
-            return result?.Matches ?? Array.Empty<string>();
+            return result?.Matches ?? new List<string>();
         }
         catch (HttpRequestException ex)
         {

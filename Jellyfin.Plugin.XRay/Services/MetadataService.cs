@@ -1,16 +1,15 @@
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Movies;
-using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.XRay.Services;
 
 /// <summary>
 /// Retrieves metadata needed for X-Ray analysis using Jellyfin's internal
-/// <see cref="ILibraryManager"/> — no API keys or HTTP calls required.
+/// ILibraryManager — no API keys or HTTP calls required.
 /// </summary>
 public class MetadataService
 {
@@ -25,13 +24,8 @@ public class MetadataService
         _logger = logger;
     }
 
-    // ------------------------------------------------------------------
-    // Public API
-    // ------------------------------------------------------------------
-
     /// <summary>
     /// Returns cast members for a media item, ordered by billing order.
-    /// Each entry contains the actor's Name and their primary image path on disk.
     /// </summary>
     public IReadOnlyList<ActorInfo> GetCast(Guid itemId)
     {
@@ -43,8 +37,10 @@ public class MetadataService
         }
 
         var people = _libraryManager.GetPeople(item);
+
+        // In Jellyfin 10.9+ PersonInfo.Type is PersonKind enum, not a string
         var actors = people
-            .Where(p => string.Equals(p.Type, PersonType.Actor, StringComparison.OrdinalIgnoreCase))
+            .Where(p => p.Type == PersonKind.Actor)
             .OrderBy(p => p.SortOrder ?? int.MaxValue)
             .ToList();
 
@@ -68,11 +64,7 @@ public class MetadataService
 
     /// <summary>
     /// Returns the trickplay directory for a media item, if one exists.
-    ///
-    /// Jellyfin stores trickplay at:
-    ///   {item.ContainingFolderPath}/.trickplay/{itemId}/{width}/
-    ///
-    /// We pick the largest available width tier for best face detection accuracy.
+    /// Picks the highest available width tier for best face detection accuracy.
     /// </summary>
     public string? GetTrickplayDirectory(Guid itemId)
     {
@@ -80,8 +72,6 @@ public class MetadataService
         if (item is null)
             return null;
 
-        // Jellyfin trickplay layout (10.9+):
-        // {MediaSourcePath}/../.trickplay/{itemId}/{width}/*.jpg
         var mediaPath = item.Path;
         if (string.IsNullOrEmpty(mediaPath))
             return null;
@@ -98,7 +88,6 @@ public class MetadataService
             return null;
         }
 
-        // Pick the widest available tier
         var widthDirs = Directory
             .EnumerateDirectories(trickplayRoot)
             .Select(d => (path: d, width: int.TryParse(Path.GetFileName(d), out var w) ? w : 0))
@@ -107,10 +96,7 @@ public class MetadataService
             .ToList();
 
         if (widthDirs.Count == 0)
-        {
-            _logger.LogDebug("Trickplay directory exists but has no width tiers for {ItemId}", itemId);
             return null;
-        }
 
         var best = widthDirs[0].path;
         _logger.LogDebug("Using trickplay dir {Path} for {ItemId}", best, itemId);
@@ -118,11 +104,11 @@ public class MetadataService
     }
 
     /// <summary>
-    /// Returns all media item IDs in the library that are Movies or Episodes.
-    /// Used by the scheduled task to iterate the full library.
+    /// Returns all movie and episode item IDs in the library.
     /// </summary>
     public IReadOnlyList<Guid> GetAllAnalysableItemIds()
     {
+        // BaseItemKind is in MediaBrowser.Model.Querying (Jellyfin 10.9)
         var query = new InternalItemsQuery
         {
             IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode },
@@ -134,16 +120,11 @@ public class MetadataService
         return result.Select(i => i.Id).ToList();
     }
 
-    // ------------------------------------------------------------------
-    // Private helpers
-    // ------------------------------------------------------------------
-
     private static string? GetPersonImagePath(Person? person)
     {
         if (person is null)
             return null;
 
-        // Try to get the local path of the primary image Jellyfin already has cached
         var image = person.GetImages(ImageType.Primary).FirstOrDefault();
         if (image is not null && File.Exists(image.Path))
             return image.Path;
@@ -152,9 +133,7 @@ public class MetadataService
     }
 }
 
-/// <summary>
-/// Lightweight DTO carrying the metadata the sidecar needs per actor.
-/// </summary>
+/// <summary>Lightweight DTO carrying the metadata the sidecar needs per actor.</summary>
 public record ActorInfo(
     string Name,
     string Role,
