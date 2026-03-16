@@ -74,7 +74,7 @@ public class AnalyzeLibraryTask : IScheduledTask
     {
         yield return new TaskTriggerInfo
         {
-            Type = TaskTriggerInfo.TriggerDaily,
+            Type = "DailyTrigger",
             TimeOfDayTicks = TimeSpan.FromHours(3).Ticks,
         };
     }
