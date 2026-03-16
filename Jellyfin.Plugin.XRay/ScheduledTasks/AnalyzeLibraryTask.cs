@@ -1,5 +1,5 @@
-using Jellyfin.Plugin.XRay.Services;
 using MediaBrowser.Model.Tasks;
+using Jellyfin.Plugin.XRay.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.XRay.ScheduledTasks;
@@ -74,7 +74,7 @@ public class AnalyzeLibraryTask : IScheduledTask
     {
         yield return new TaskTriggerInfo
         {
-            Type = "DailyTrigger",
+            Type = TaskTriggerInfoType.DailyTrigger,
             TimeOfDayTicks = TimeSpan.FromHours(3).Ticks,
         };
     }
