@@ -5,11 +5,12 @@ FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Python + OpenCV system deps
+# Python + OpenCV system deps + build tools for insightface Cython extension
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-dev \
+    build-essential \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
@@ -24,7 +25,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # works offline at runtime. Uses CPU provider here (no GPU during build).
 RUN python3 -c "\
 from insightface.app import FaceAnalysis; \
-a = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); \
+a = FaceAnalysis(name='buffalo_l', allowed_modules=['detection','recognition'], providers=['CPUExecutionProvider']); \
 a.prepare(ctx_id=-1, det_size=(640, 640)); \
 print('InsightFace buffalo_l models downloaded OK')"
 

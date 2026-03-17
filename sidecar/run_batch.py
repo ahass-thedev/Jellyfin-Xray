@@ -6,13 +6,15 @@ Reads Jellyfin's jellyfin.db directly (no HTTP API), runs InsightFace on every
 trickplay frame using the local GPU, and writes X-Ray JSON results that the
 plugin serves.
 
-Output: {appdata}/data/xray/{itemId}.json
+Output: {output_dir}/{itemId}.json
 Format: {"42": ["Tom Hanks", "Robin Wright"], "130": ["Gary Sinise"]}
 
 Usage (Unraid / Docker setup where paths inside the container differ from the host):
     python run_batch.py \
         --appdata "\\\\10.10.3.18\\appdata\\jellyfin-stack\\jellyfin-config" \
         --data-root "\\\\10.10.3.18\\data" \
+        --output-dir "./xray_output" \
+        --workers 4 \
         --skip-existing
 """
 
@@ -21,14 +23,17 @@ import base64
 import json
 import logging
 import os
+import queue
 import sqlite3
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from matcher import FaceMatcher
+from matcher import FaceMatcher, _get_face_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,16 +49,9 @@ _TYPE_PERSON  = "MediaBrowser.Controller.Entities.Person"
 
 # ---------------------------------------------------------------------------
 # Path remapping
-# Container stores absolute paths like /data/... and /config/...
-# We remap them to SMB/local equivalents at runtime.
 # ---------------------------------------------------------------------------
 
 def remap(path: str, appdata: str, data_root: str) -> str:
-    """
-    Remap container-internal paths to host-accessible paths.
-      /config/... → {appdata}/...
-      /data/...   → {data_root}/...
-    """
     if path.startswith("/config/"):
         return os.path.join(appdata, path[len("/config/"):])
     if path.startswith("/data/"):
@@ -66,7 +64,6 @@ def remap(path: str, appdata: str, data_root: str) -> str:
 # ---------------------------------------------------------------------------
 
 def iter_media_items(conn: sqlite3.Connection):
-    """Yield (id, name, path) for all movies and episodes that have trickplay."""
     cur = conn.execute(
         """
         SELECT b.Id, b.Name, b.Path
@@ -85,7 +82,6 @@ def iter_media_items(conn: sqlite3.Connection):
 
 
 def get_actors(conn: sqlite3.Connection, item_id: str) -> list[tuple[str, str]]:
-    """Return [(name, role), ...] for actors in billing order."""
     cur = conn.execute(
         """
         SELECT p.Name, pm.Role
@@ -100,7 +96,6 @@ def get_actors(conn: sqlite3.Connection, item_id: str) -> list[tuple[str, str]]:
 
 
 def get_trickplay_info(conn: sqlite3.Connection, item_id: str):
-    """Return (cols, rows, interval_seconds) from TrickplayInfos, highest-width tier."""
     row = conn.execute(
         """
         SELECT TileWidth, TileHeight, Interval
@@ -114,12 +109,10 @@ def get_trickplay_info(conn: sqlite3.Connection, item_id: str):
     if row is None:
         return None
     cols, rows, interval_ms = int(row[0]), int(row[1]), int(row[2])
-    interval_sec = max(1, interval_ms // 1000)
-    return cols, rows, interval_sec
+    return cols, rows, max(1, interval_ms // 1000)
 
 
 def get_actor_image_path(conn: sqlite3.Connection, name: str) -> str | None:
-    """Get the Primary image path for a person (stored in BaseItems)."""
     row = conn.execute(
         """
         SELECT i.Path
@@ -140,17 +133,14 @@ def get_actor_image_path(conn: sqlite3.Connection, name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def find_trickplay_dir(media_path: str, cols: int, rows: int) -> str | None:
-    """Find the trickplay sprite directory next to the media file."""
-    media_dir = os.path.dirname(media_path)
+    media_dir  = os.path.dirname(media_path)
     media_name = os.path.splitext(os.path.basename(media_path))[0]
-    tp_root = os.path.join(media_dir, media_name + ".trickplay")
+    tp_root    = os.path.join(media_dir, media_name + ".trickplay")
 
     if not os.path.isdir(tp_root):
         return None
 
-    # Pick the highest-width tier matching the DB cols/rows
-    best_width = -1
-    best_path = None
+    best_width, best_path = -1, None
     for entry in os.scandir(tp_root):
         if not entry.is_dir():
             continue
@@ -161,27 +151,23 @@ def find_trickplay_dir(media_path: str, cols: int, rows: int) -> str | None:
             width = int(entry.name[:dash])
             grid  = entry.name[dash + 3:]
             xi    = grid.index("x")
-            c     = int(grid[:xi])
-            r     = int(grid[xi + 1:])
+            c, r  = int(grid[:xi]), int(grid[xi + 1:])
         except (ValueError, IndexError):
             continue
         if c == cols and r == rows and width > best_width:
-            best_width = width
-            best_path  = entry.path
+            best_width, best_path = width, entry.path
 
     return best_path
 
 
 def iter_sprite_frames(sprite_path: str, cols: int, rows: int,
                        base_second: int, interval: int):
-    """Yield (timestamp_seconds, rgb_ndarray) for every tile in a sprite sheet."""
     img = np.array(Image.open(sprite_path).convert("RGB"))
     h, w = img.shape[:2]
     th, tw = h // rows, w // cols
-
     for row in range(rows):
         for col in range(cols):
-            ts  = base_second + (row * cols + col) * interval
+            ts = base_second + (row * cols + col) * interval
             y0, y1 = row * th, min((row + 1) * th, h)
             x0, x1 = col * tw, min((col + 1) * tw, w)
             yield ts, img[y0:y1, x0:x1]
@@ -201,69 +187,97 @@ def image_to_b64(path: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Core pipeline — one media item
+# Pre-fetch all item data from the DB (single-threaded, before parallelism)
 # ---------------------------------------------------------------------------
 
-def process_item(
-    conn:       sqlite3.Connection,
-    matcher:    FaceMatcher,
-    item_id:    str,
-    item_name:  str,
-    media_path: str,        # host-remapped path
-    output_dir: Path,
-    cols:       int,
-    rows:       int,
-    interval:   int,
-    appdata:    str,
-    data_root:  str,
-    tolerance:  float,
-    confidence: float,
-    skip_existing: bool,
-) -> bool:
-    guid_clean = item_id.replace("-", "").lower()
-    out_path   = output_dir / f"{guid_clean}.json"
+def prefetch_items(conn, items, appdata, data_root, output_dir, skip_existing):
+    """
+    Build a list of ready-to-process dicts.  All DB and filesystem work
+    (actor images, sprite dir scan) is done here so workers are pure compute.
+    """
+    prepared = []
+    for item_id, item_name, db_media_path in items:
+        guid_clean = item_id.replace("-", "").lower()
+        out_path   = output_dir / f"{guid_clean}.json"
 
-    if skip_existing and out_path.exists():
-        log.info("SKIP  %s (already done)", item_name)
-        return False
-
-    # Actors + their images
-    raw_actors = get_actors(conn, item_id)
-    if not raw_actors:
-        log.warning("SKIP  %s — no actors", item_name)
-        return False
-
-    actors: dict[str, str] = {}
-    for name, _role in raw_actors:
-        db_path = get_actor_image_path(conn, name)
-        if not db_path:
+        if skip_existing and out_path.exists():
+            log.info("SKIP  %s (already done)", item_name)
             continue
-        host_path = remap(db_path, appdata, data_root)
-        b64 = image_to_b64(host_path)
-        if b64:
-            actors[name] = b64
 
-    if not actors:
-        log.warning("SKIP  %s — no actor images resolved", item_name)
-        return False
+        tp = get_trickplay_info(conn, item_id)
+        if tp is None:
+            continue
+        cols, rows, interval = tp
 
-    # Trickplay sprites
-    sprite_dir = find_trickplay_dir(media_path, cols, rows)
-    if sprite_dir is None:
-        log.warning("SKIP  %s — trickplay dir not found at %s", item_name, media_path)
-        return False
+        media_path = remap(db_media_path, appdata, data_root)
+        sprite_dir = find_trickplay_dir(media_path, cols, rows)
+        if sprite_dir is None:
+            log.warning("SKIP  %s — trickplay dir not found", item_name)
+            continue
 
-    sprite_files = sorted(
-        (f for f in os.listdir(sprite_dir) if f.endswith(".jpg")),
-        key=lambda f: int(os.path.splitext(f)[0]),
-    )
-    if not sprite_files:
-        log.warning("SKIP  %s — no sprite files in %s", item_name, sprite_dir)
-        return False
+        sprite_files = sorted(
+            (f for f in os.listdir(sprite_dir) if f.endswith(".jpg")),
+            key=lambda f: int(os.path.splitext(f)[0]),
+        )
+        if not sprite_files:
+            log.warning("SKIP  %s — no sprite files", item_name)
+            continue
+
+        raw_actors = get_actors(conn, item_id)
+        if not raw_actors:
+            log.warning("SKIP  %s — no actors", item_name)
+            continue
+
+        actors: dict[str, str] = {}
+        for name, _role in raw_actors:
+            db_img = get_actor_image_path(conn, name)
+            if not db_img:
+                continue
+            b64 = image_to_b64(remap(db_img, appdata, data_root))
+            if b64:
+                actors[name] = b64
+
+        if not actors:
+            log.warning("SKIP  %s — no actor images resolved", item_name)
+            continue
+
+        prepared.append({
+            "item_id":    item_id,
+            "item_name":  item_name,
+            "out_path":   out_path,
+            "sprite_dir": sprite_dir,
+            "sprite_files": sprite_files,
+            "cols":       cols,
+            "rows":       rows,
+            "interval":   interval,
+            "actors":     actors,
+        })
+
+    return prepared
+
+
+# ---------------------------------------------------------------------------
+# Core pipeline — one media item (called from worker threads)
+# ---------------------------------------------------------------------------
+
+def process_prepared(item: dict, matcher: FaceMatcher,
+                     tolerance: float, confidence: float,
+                     output_dir: Path) -> tuple[str, int]:
+    """
+    Process one pre-fetched item.  Returns (item_name, n_timestamps).
+    Raises on error so the caller can count failures.
+    """
+    name         = item["item_name"]
+    sprite_dir   = item["sprite_dir"]
+    sprite_files = item["sprite_files"]
+    cols, rows   = item["cols"], item["rows"]
+    interval     = item["interval"]
+    actors       = item["actors"]
+    out_path     = item["out_path"]
 
     tiles_per_sprite = cols * rows
     log.info("START %s  actors=%d  sprites=%d  grid=%dx%d",
-             item_name, len(actors), len(sprite_files), cols, rows)
+             name, len(actors), len(sprite_files), cols, rows)
 
     xray_data: dict[str, list[str]] = {}
 
@@ -282,8 +296,8 @@ def process_item(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(xray_data, separators=(",", ":")), encoding="utf-8")
-    log.info("DONE  %s  → %d timestamp entries", item_name, len(xray_data))
-    return True
+    log.info("DONE  %s  -> %d timestamp entries", name, len(xray_data))
+    return name, len(xray_data)
 
 
 # ---------------------------------------------------------------------------
@@ -296,27 +310,29 @@ def main():
     )
     parser.add_argument(
         "--appdata", required=True,
-        help="Jellyfin config root (/config inside container). "
-             r"E.g. \\10.10.3.18\appdata\jellyfin-stack\jellyfin-config",
+        help="Jellyfin config root (/config inside container).",
     )
     parser.add_argument(
         "--data-root", required=True,
-        help="Jellyfin data/media root (/data inside container). "
-             r"E.g. \\10.10.3.18\data",
+        help="Jellyfin data/media root (/data inside container).",
     )
     parser.add_argument("--tolerance",  type=float, default=0.55)
     parser.add_argument("--confidence", type=float, default=0.05)
     parser.add_argument("--cache-dir",  default="./cache")
-    parser.add_argument("--skip-existing", action="store_true",
-                        help="Skip items that already have an X-Ray JSON file")
+    parser.add_argument("--output-dir", default=None,
+                        help="Override output dir (default: {appdata}/data/xray).")
+    parser.add_argument("--workers",    type=int, default=4,
+                        help="Parallel worker threads (default 4). "
+                             "Higher values saturate the GPU better.")
+    parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--item", default=None,
-                        help="Process only this item GUID (for testing)")
+                        help="Process only this item GUID (for testing).")
     args = parser.parse_args()
 
     appdata   = args.appdata.rstrip("/\\")
     data_root = args.data_root.rstrip("/\\")
     db_path   = os.path.join(appdata, "data", "jellyfin.db")
-    out_dir   = Path(appdata) / "data" / "xray"
+    out_dir   = Path(args.output_dir) if args.output_dir else Path(appdata) / "data" / "xray"
 
     if not os.path.exists(db_path):
         log.error("Database not found: %s", db_path)
@@ -326,20 +342,19 @@ def main():
     log.info("Data    : %s", data_root)
     log.info("Database: %s", db_path)
     log.info("Output  : %s", out_dir)
+    log.info("Workers : %d", args.workers)
 
-    # Copy DB locally to avoid WAL-over-SMB issues, then open read-only
     import shutil, tempfile
     tmp = tempfile.mkdtemp()
     local_db = os.path.join(tmp, "jellyfin.db")
-    log.info("Copying DB to %s for WAL read...", tmp)
+    log.info("Copying DB locally for WAL read...")
     shutil.copy2(db_path, local_db)
     for ext in ("-wal", "-shm"):
         src = db_path + ext
         if os.path.exists(src):
             shutil.copy2(src, local_db + ext)
 
-    matcher = FaceMatcher(cache_dir=Path(args.cache_dir))
-    conn    = sqlite3.connect(local_db)
+    conn = sqlite3.connect(local_db)
 
     try:
         items = list(iter_media_items(conn))
@@ -353,34 +368,48 @@ def main():
                 log.error("Item %s not found", args.item)
                 sys.exit(1)
 
-        done = skipped = failed = 0
-        for item_id, item_name, db_media_path in items:
-            media_path = remap(db_media_path, appdata, data_root)
-            tp = get_trickplay_info(conn, item_id)
-            if tp is None:
-                skipped += 1
-                continue
-            cols, rows, interval = tp
-            try:
-                ok = process_item(
-                    conn, matcher,
-                    item_id, item_name, media_path, out_dir,
-                    cols, rows, interval,
-                    appdata, data_root,
-                    tolerance=args.tolerance,
-                    confidence=args.confidence,
-                    skip_existing=args.skip_existing,
-                )
-                if ok: done += 1
-                else:  skipped += 1
-            except KeyboardInterrupt:
-                log.info("Interrupted — done=%d skipped=%d failed=%d", done, skipped, failed)
-                sys.exit(0)
-            except Exception as e:
-                log.error("FAIL  %s: %s", item_name, e, exc_info=True)
-                failed += 1
+        log.info("Pre-fetching item data (actor images, sprite dirs)...")
+        prepared = prefetch_items(conn, items, appdata, data_root,
+                                  out_dir, args.skip_existing)
+        log.info("Items ready to process: %d", len(prepared))
 
-        log.info("Finished — done=%d  skipped=%d  failed=%d", done, skipped, failed)
+        # Warm up InsightFace model before spawning threads so the lazy
+        # singleton is initialised once in the main thread.
+        log.info("Warming up InsightFace model...")
+        _get_face_app()
+
+        matcher = FaceMatcher(cache_dir=Path(args.cache_dir))
+
+        done = skipped_pre = failed = 0
+        skipped_pre = len(items) - len(prepared)
+        total = len(prepared)
+
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(
+                    process_prepared, item, matcher,
+                    args.tolerance, args.confidence, out_dir
+                ): item["item_name"]
+                for item in prepared
+            }
+            for i, future in enumerate(as_completed(futures), 1):
+                name = futures[future]
+                try:
+                    _, n_ts = future.result()
+                    done += 1
+                    if (i % 10) == 0 or i == total:
+                        log.info("Progress: %d/%d  done=%d  failed=%d",
+                                 i, total, done, failed)
+                except KeyboardInterrupt:
+                    log.info("Interrupted")
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    sys.exit(0)
+                except Exception as e:
+                    log.error("FAIL  %s: %s", name, e, exc_info=True)
+                    failed += 1
+
+        log.info("Finished — done=%d  skipped=%d  failed=%d",
+                 done, skipped_pre, failed)
     finally:
         conn.close()
         shutil.rmtree(tmp, ignore_errors=True)

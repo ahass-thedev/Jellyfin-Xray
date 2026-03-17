@@ -15,6 +15,7 @@ import hashlib
 import io
 import logging
 import pickle
+import threading
 from pathlib import Path
 
 import cv2
@@ -50,6 +51,7 @@ class FaceMatcher:
         self._cache_dir = cache_dir
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._mem: dict[str, list] = {}
+        self._lock = threading.Lock()   # protects _mem and disk cache
 
     # ------------------------------------------------------------------
     # Public API
@@ -139,15 +141,17 @@ class FaceMatcher:
         cache_key = _cache_key(image_b64)
         mem_key = f"{name}:{cache_key}"
 
-        if mem_key in self._mem:
-            return self._mem[mem_key]
+        with self._lock:
+            if mem_key in self._mem:
+                return self._mem[mem_key]
 
         disk_path = self._cache_dir / f"{cache_key}.pkl"
         if disk_path.exists():
             try:
                 with open(disk_path, "rb") as f:
                     encs = pickle.load(f)
-                self._mem[mem_key] = encs
+                with self._lock:
+                    self._mem[mem_key] = encs
                 return encs
             except Exception as e:
                 log.warning("Corrupt cache for '%s', recomputing: %s", name, e)
@@ -157,7 +161,8 @@ class FaceMatcher:
         if encs:
             with open(disk_path, "wb") as f:
                 pickle.dump(encs, f)
-        self._mem[mem_key] = encs
+        with self._lock:
+            self._mem[mem_key] = encs
         return encs
 
 
