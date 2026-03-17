@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "1.0.0.21",
+        "version": "1.0.0.22",
         "changelog": "See release notes.",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.0.0.21/jellyfin-plugin-xray_1.0.0.21.zip",
-        "checksum": "a50ce29bbb7dea6ceeb2924cdbe907d3",
-        "timestamp": "2026-03-17T04:42:59Z"
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.0.0.22/jellyfin-plugin-xray_1.0.0.22.zip",
+        "checksum": "e54a45a8e891134ca6e3ffc396664ca4",
+        "timestamp": "2026-03-17T14:52:56Z"
       }
     ]
   }
