@@ -135,6 +135,7 @@
       activateOverlay: function(page, enabled) {
         var statusEl = page.querySelector("#OverlayStatus");
         if (!enabled) {
+          localStorage.removeItem("xray_overlay");
           statusEl.textContent = "Overlay is disabled in settings.";
           statusEl.style.color = "gray";
           return;
@@ -144,7 +145,8 @@
           statusEl.style.color = "green";
           return;
         }
-        // Inject overlay.js into the page
+        // Inject overlay.js into the page and persist activation
+        localStorage.setItem("xray_overlay", "1");
         var s = document.createElement("script");
         s.src = "/XRay/overlay.js";
         s.onload = function() {
