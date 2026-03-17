@@ -43,7 +43,7 @@
   function onViewChange() {
     const href = location.href;
     // Jellyfin 10.9 and earlier: #/videoosd, #/nowplaying
-    // Jellyfin 10.10+: #/video (React router)
+    // Jellyfin 10.10+: #/video (React router — no item ID in URL)
     const isPlayer =
       href.includes('videoosd') ||
       href.includes('nowplaying') ||
@@ -52,22 +52,43 @@
       !!document.querySelector('.videoOsdPage, #videoOsdPage, .osdContainer, [data-role="videoOsd"]');
 
     const m = href.match(/[?&]id=([a-f0-9-]{8,})/i);
-    const itemId = m ? m[1] : null;
+    const urlItemId = m ? m[1].replace(/-/g, '') : null;
 
-    if (isPlayer && itemId && itemId !== currentItemId) {
-      currentItemId = itemId;
+    if (isPlayer && urlItemId && urlItemId !== currentItemId) {
+      currentItemId = urlItemId;
       teardown();
-      waitForVideo(itemId);
+      waitForVideo(urlItemId);
+    } else if (isPlayer && !urlItemId && !currentItemId) {
+      // React router: item ID not in URL — extract from video poster attribute
+      teardown();
+      waitForVideo(null);
     } else if (!isPlayer) {
       currentItemId = null;
       teardown();
     }
   }
 
+  // Extract Jellyfin item ID from a video element's poster URL
+  // e.g. https://jellyfin.host/Items/534c46c51c7798800363975c382995b6/Images/Backdrop/...
+  function extractItemIdFromVideo(video) {
+    if (video && video.poster) {
+      const m = video.poster.match(/\/Items\/([a-f0-9]{32,})\//i);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
   function waitForVideo(itemId, tries = 0) {
     const video = document.querySelector('video');
     if (video) {
-      setup(video, itemId);
+      const id = itemId || extractItemIdFromVideo(video);
+      if (id) {
+        currentItemId = id;
+        setup(video, id);
+      } else if (tries < 20) {
+        // poster URL may not be populated yet
+        setTimeout(() => waitForVideo(null, tries + 1), 300);
+      }
     } else if (tries < 40) {
       setTimeout(() => waitForVideo(itemId, tries + 1), 300);
     }
