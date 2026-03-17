@@ -25,8 +25,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>
     /// Gets or sets the minimum confidence (0–1) required to report a match.
+    /// Confidence is relative to tolerance: 1.0 = perfect match, 0.0 = at tolerance boundary.
     /// </summary>
-    public double FaceConfidenceThreshold { get; set; } = 0.60;
+    public double FaceConfidenceThreshold { get; set; } = 0.05;
 
     /// <summary>
     /// Gets or sets the trickplay frame interval in seconds.

@@ -89,18 +89,18 @@ class FaceMatcher:
             distances = face_recognition.face_distance(known_encodings, face_enc)
             best_idx = int(np.argmin(distances))
             best_dist = float(distances[best_idx])
-            log.info("Best match: '%s' dist=%.3f (tolerance=%.2f, confidence=%.2f)",
-                     known_names[best_idx], best_dist, tolerance, _dist_to_confidence(best_dist))
+            confidence = _dist_to_confidence(best_dist, tolerance)
+            log.info("Best match: '%s' dist=%.3f conf=%.2f (tolerance=%.2f threshold=%.2f)",
+                     known_names[best_idx], best_dist, confidence, tolerance, confidence_threshold)
 
             if best_dist > tolerance:
                 continue
 
-            confidence = _dist_to_confidence(best_dist)
             if confidence < confidence_threshold:
                 continue
 
             matched.add(known_names[best_idx])
-            log.info("Matched '%s' (dist=%.3f, conf=%.2f)", known_names[best_idx], best_dist, confidence)
+            log.info("*** Matched '%s' dist=%.3f conf=%.2f", known_names[best_idx], best_dist, confidence)
 
         # Return in original billing order
         return [name for name in actors if name in matched]
@@ -168,9 +168,14 @@ def _largest_face(locations: list[tuple]) -> tuple:
     return max(locations, key=area)
 
 
-def _dist_to_confidence(distance: float) -> float:
-    """Map face distance (0=identical) to a 0–1 confidence score."""
-    return max(0.0, 1.0 - (distance / 0.6))
+def _dist_to_confidence(distance: float, tolerance: float = 0.55) -> float:
+    """
+    Map face distance to a 0–1 confidence score relative to tolerance.
+    confidence=1.0 when distance=0 (identical), confidence=0.0 when distance>=tolerance.
+    """
+    if distance >= tolerance:
+        return 0.0
+    return 1.0 - (distance / tolerance)
 
 
 def _cache_key(image_b64: str) -> str:
