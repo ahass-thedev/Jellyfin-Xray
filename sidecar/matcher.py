@@ -53,8 +53,21 @@ class FaceMatcher:
         Returns:
             List of matched actor names, in the same order as `actors`.
         """
-        locations = face_recognition.face_locations(frame, model="hog", number_of_times_to_upsample=1)
-        log.info("Frame %dx%d: %d face(s) detected", frame.shape[1], frame.shape[0], len(locations))
+        # Pre-scale frames smaller than 640x360 to 2x before detection.
+        # HOG requires faces to be ~35px+ tall; a face at 15% of a 180px frame is only 27px.
+        # Explicit 2x resize (vs number_of_times_to_upsample=2) avoids dlib's noisy
+        # internal pyramid that previously caused 739 false positives and OOM.
+        detect_frame = frame
+        if frame.shape[0] < 360 or frame.shape[1] < 640:
+            detect_frame = np.array(
+                Image.fromarray(frame).resize((frame.shape[1] * 2, frame.shape[0] * 2)),
+                dtype=np.uint8,
+            )
+
+        locations = face_recognition.face_locations(detect_frame, model="hog", number_of_times_to_upsample=1)
+        log.info("Frame %dx%d (detect %dx%d): %d face(s) detected",
+                 frame.shape[1], frame.shape[0],
+                 detect_frame.shape[1], detect_frame.shape[0], len(locations))
         if not locations:
             return []
 
@@ -63,7 +76,7 @@ class FaceMatcher:
             log.warning("Skipping frame — %d detections is almost certainly noise", len(locations))
             return []
 
-        frame_encodings = face_recognition.face_encodings(frame, known_face_locations=locations)
+        frame_encodings = face_recognition.face_encodings(detect_frame, known_face_locations=locations)
         if not frame_encodings:
             return []
 
