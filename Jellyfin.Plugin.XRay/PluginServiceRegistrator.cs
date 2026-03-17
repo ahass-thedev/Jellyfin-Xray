@@ -1,8 +1,10 @@
 using Jellyfin.Plugin.XRay.Services;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.XRay;
@@ -32,7 +34,7 @@ public class XRayInitializer : Microsoft.Extensions.Hosting.IHostedService
     public XRayInitializer(
         ILibraryManager libraryManager,
         ILoggerFactory loggerFactory,
-        MediaBrowser.Common.Configuration.IApplicationPaths appPaths)
+        IApplicationPaths appPaths)
     {
         _libraryManager = libraryManager;
         _loggerFactory = loggerFactory;
