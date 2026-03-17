@@ -29,6 +29,10 @@ public class XRayInjectMiddleware
             return;
         }
 
+        // Remove Accept-Encoding so Jellyfin's compression middleware serves raw HTML.
+        // Without this, the buffer contains gzip/br bytes and string injection fails.
+        context.Request.Headers.Remove("Accept-Encoding");
+
         var originalBody = context.Response.Body;
         using var buffer = new MemoryStream();
         context.Response.Body = buffer;
@@ -45,12 +49,14 @@ public class XRayInjectMiddleware
         buffer.Seek(0, SeekOrigin.Begin);
         var body = await new StreamReader(buffer, Encoding.UTF8).ReadToEndAsync().ConfigureAwait(false);
 
-        if (context.Response.ContentType?.Contains("text/html", StringComparison.OrdinalIgnoreCase) == true
-            && body.Contains("</body>", StringComparison.OrdinalIgnoreCase))
+        // Search for </body> regardless of Content-Type header timing
+        var idx = body.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
         {
-            body = body.Replace("</body>", ScriptTag + "</body>", StringComparison.OrdinalIgnoreCase);
+            body = body[..idx] + ScriptTag + "</body>" + body[(idx + 7)..];
             var bytes = Encoding.UTF8.GetBytes(body);
             context.Response.ContentLength = bytes.Length;
+            context.Response.Headers.Remove("Content-Encoding");
             await originalBody.WriteAsync(bytes).ConfigureAwait(false);
         }
         else

@@ -65,10 +65,11 @@ public class XRayController : ControllerBase
     public ContentResult AutobootScript()
     {
         var cfg = Plugin.Instance?.Configuration;
-        if (cfg?.OverlayEnabled != true)
+        // Default to enabled when plugin isn't fully loaded yet; only skip if explicitly disabled.
+        if (cfg?.OverlayEnabled == false)
             return Content(string.Empty, "application/javascript");
 
-        var maxActors = cfg.MaxActorsDisplayed;
+        var maxActors = cfg?.MaxActorsDisplayed ?? 4;
         var script = $"(function(){{if(window.__xrayLoaded)return;window._xrayMaxActors={maxActors};var s=document.createElement('script');s.src='/XRay/overlay.js';document.head.appendChild(s);}})();";
         return Content(script, "application/javascript");
     }
