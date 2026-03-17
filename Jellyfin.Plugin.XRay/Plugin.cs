@@ -1,32 +1,23 @@
 using System.Reflection;
 using Jellyfin.Plugin.XRay.Configuration;
-using Jellyfin.Plugin.XRay.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
-using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.XRay;
 
 /// <summary>
 /// The X-Ray plugin entry point.
-/// Follows the minimal-constructor pattern required by Jellyfin's plugin system.
-/// Services are registered via DI through PluginServiceRegistrator.
+/// Constructor must only take IApplicationPaths and IXmlSerializer —
+/// these are the only two parameters Jellyfin's plugin loader injects.
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    private readonly ILogger<Plugin> _logger;
-
-    public Plugin(
-        IApplicationPaths applicationPaths,
-        IXmlSerializer xmlSerializer,
-        ILoggerFactory loggerFactory)
+    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
-        _logger = loggerFactory.CreateLogger<Plugin>();
         Instance = this;
-
         Directory.CreateDirectory(DataPath);
         Directory.CreateDirectory(EncodingCachePath);
     }
@@ -63,17 +54,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         };
     }
 
+    /// <summary>Lists all embedded resource names in the assembly — for diagnostics.</summary>
+    public IEnumerable<string> GetEmbeddedResourceNames()
+        => System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceNames();
+
     /// <summary>Returns the embedded JS overlay script as a string.</summary>
     public string GetOverlayScript()
     {
         var resourceName = $"{GetType().Namespace}.ClientScript.xray-overlay.js";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
-        if (stream is null)
-        {
-            _logger.LogError("Could not find embedded resource: {Name}", resourceName);
-            return string.Empty;
-        }
-
+        if (stream is null) return string.Empty;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }

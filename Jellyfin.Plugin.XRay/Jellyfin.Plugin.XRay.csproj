@@ -14,8 +14,8 @@
 
   <!-- Embed the config page HTML and the JS overlay as resources -->
   <ItemGroup>
-    <EmbeddedResource Include="Configuration\configPage.html" />
-    <EmbeddedResource Include="ClientScript\xray-overlay.js" />
+    <EmbeddedResource Include="Configuration/configPage.html" />
+    <EmbeddedResource Include="ClientScript/xray-overlay.js" />
   </ItemGroup>
 
   <!-- Jellyfin references — correct package names on nuget.org, CopyLocal false so not bundled -->

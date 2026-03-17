@@ -42,6 +42,16 @@ public class XRayController : ControllerBase
         return Content(script, "application/javascript");
     }
 
+    /// <summary>
+    /// Diagnostic endpoint — lists all embedded resource names compiled into the assembly.
+    /// Call this to verify the correct EmbeddedResourcePath for configPage.html.
+    /// GET /XRay/resources
+    /// </summary>
+    [HttpGet("resources")]
+    [AllowAnonymous]
+    public ActionResult<IEnumerable<string>> ListResources()
+        => Ok(Plugin.Instance?.GetEmbeddedResourceNames() ?? Array.Empty<string>());
+
     [HttpPost("analyze/{itemId}")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -63,9 +73,7 @@ public class XRayController : ControllerBase
     [AllowAnonymous]
     [ProducesResponseType(typeof(XRayStatusResponse), StatusCodes.Status200OK)]
     public ActionResult<XRayStatusResponse> Status([FromRoute] Guid itemId)
-    {
-        return Ok(new XRayStatusResponse(itemId, _store.Exists(itemId)));
-    }
+        => Ok(new XRayStatusResponse(itemId, _store.Exists(itemId)));
 }
 
 public record XRayQueryResponse(Guid ItemId, int T, IReadOnlyList<string> Actors);
