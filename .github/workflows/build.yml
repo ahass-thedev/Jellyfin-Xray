@@ -55,7 +55,9 @@ jobs:
           ZIPNAME="jellyfin-plugin-xray_${VERSION}.zip"
 
           mkdir -p dist
-          zip -j "dist/${ZIPNAME}" publish/*.dll
+          # Only bundle true third-party deps — NOT Jellyfin/Microsoft/system assemblies
+          # Bundling Jellyfin assemblies causes IHasWebPages type mismatch
+          zip -j "dist/${ZIPNAME}"             publish/Jellyfin.Plugin.XRay.dll             publish/Docker.DotNet.dll             publish/Newtonsoft.Json.dll             publish/SixLabors.ImageSharp.dll             publish/Polly.dll             publish/Polly.Core.dll
           echo "zip_name=${ZIPNAME}" >> $GITHUB_ENV
 
           CHECKSUM=$(md5sum "dist/${ZIPNAME}" | awk '{ print $1 }')
