@@ -22,8 +22,9 @@
 
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label class="emby-checkbox-label">
-            <input id="AutoStartSidecar" name="AutoStartSidecar" type="checkbox" class="emby-checkbox" />
-            <span>Auto-start sidecar on Jellyfin startup</span>
+            <input id="AutoStartSidecar" name="AutoStartSidecar" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+            <span class="checkmark"></span>
+            <span class="labelText">Auto-start sidecar on Jellyfin startup</span>
           </label>
           <div class="fieldDescription checkboxFieldDescription">
             Uncheck if you manage the sidecar as a separate service (e.g. systemd).
@@ -66,8 +67,9 @@
 
         <div class="checkboxContainer">
           <label class="emby-checkbox-label">
-            <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" class="emby-checkbox" />
-            <span>Enable overlay in player</span>
+            <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+            <span class="checkmark"></span>
+            <span class="labelText">Enable overlay in player</span>
           </label>
         </div>
 
@@ -126,20 +128,19 @@
       },
 
       checkSidecar: function(page) {
-        var url = page.querySelector("#SidecarUrl").value || "http://localhost:8756";
         var status = page.querySelector("#SidecarStatus");
         status.textContent = "Checking…";
         status.style.color = "gray";
-        fetch(url + "/health").then(function(r) {
-          if (r.ok) {
-            status.textContent = "Sidecar is running";
+        ApiClient.fetch({ url: ApiClient.getUrl("XRay/sidecar-health"), type: "GET" }).then(function(result) {
+          if (result.reachable) {
+            status.textContent = "Sidecar is running at " + result.url;
             status.style.color = "green";
           } else {
-            status.textContent = "Sidecar returned HTTP " + r.status;
-            status.style.color = "orange";
+            status.innerHTML = "Sidecar unreachable at <a href=\"" + result.url + "\" style=\"color:red\">" + result.url + "</a>";
+            status.style.color = "red";
           }
         }).catch(function() {
-          status.textContent = "Sidecar unreachable at " + url;
+          status.textContent = "Could not contact Jellyfin API";
           status.style.color = "red";
         });
       }

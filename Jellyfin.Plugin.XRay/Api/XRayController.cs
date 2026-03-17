@@ -8,8 +8,14 @@ namespace Jellyfin.Plugin.XRay.Api;
 [Route("[controller]")]
 public class XRayController : ControllerBase
 {
-    // No constructor injection — services accessed via Plugin.Instance
-    // since IPluginServiceRegistrator is unreliable in Jellyfin 10.11
+    // Plugin services accessed via Plugin.Instance (IPluginServiceRegistrator unreliable in Jellyfin 10.11).
+    // IHttpClientFactory is injected normally since it's a standard ASP.NET Core service.
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public XRayController(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
 
     [HttpGet("resources")]
     [AllowAnonymous]
@@ -74,7 +80,26 @@ public class XRayController : ControllerBase
     [AllowAnonymous]
     public ActionResult<XRayStatusResponse> Status([FromRoute] Guid itemId)
         => Ok(new XRayStatusResponse(itemId, Plugin.Instance?.Store?.Exists(itemId) ?? false));
+
+    [HttpGet("sidecar-health")]
+    [AllowAnonymous]
+    public async Task<ActionResult<SidecarHealthResponse>> SidecarHealth()
+    {
+        var url = Plugin.Instance?.Configuration.SidecarUrl ?? "http://localhost:8756";
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            var response = await client.GetAsync(url + "/health").ConfigureAwait(false);
+            return Ok(new SidecarHealthResponse(url, response.IsSuccessStatusCode));
+        }
+        catch
+        {
+            return Ok(new SidecarHealthResponse(url, false));
+        }
+    }
 }
 
 public record XRayQueryResponse(Guid ItemId, int T, IReadOnlyList<string> Actors);
 public record XRayStatusResponse(Guid ItemId, bool Ready);
+public record SidecarHealthResponse(string Url, bool Reachable);
