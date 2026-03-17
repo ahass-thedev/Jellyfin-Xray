@@ -65,6 +65,8 @@ def match(req: MatchRequest):
     if _matcher is None:
         return JSONResponse(status_code=503, content={"detail": "Matcher not initialised"})
 
+    log.info("Match request: %d actors", len(req.actors))
+
     try:
         import base64
         import numpy as np
@@ -78,6 +80,10 @@ def match(req: MatchRequest):
         log.warning("Failed to decode frame: %s", e)
         return MatchResponse(matches=[])
 
+    if not req.actors:
+        log.warning("No actors in request — skipping")
+        return MatchResponse(matches=[])
+
     actors = {a.name: a.image_b64 for a in req.actors}
     matches = _matcher.match(
         frame=frame_array,
@@ -85,6 +91,9 @@ def match(req: MatchRequest):
         tolerance=req.tolerance,
         confidence_threshold=req.confidence_threshold,
     )
+
+    if matches:
+        log.info("Matched: %s", matches)
 
     return MatchResponse(matches=matches)
 

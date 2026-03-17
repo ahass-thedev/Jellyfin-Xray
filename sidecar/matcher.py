@@ -54,6 +54,7 @@ class FaceMatcher:
             List of matched actor names, in the same order as `actors`.
         """
         locations = face_recognition.face_locations(frame, model="hog")
+        log.info("Frame %dx%d: %d face(s) detected", frame.shape[1], frame.shape[0], len(locations))
         if not locations:
             return []
 
