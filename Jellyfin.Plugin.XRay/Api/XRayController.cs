@@ -1,4 +1,3 @@
-using Jellyfin.Plugin.XRay.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -9,14 +8,13 @@ namespace Jellyfin.Plugin.XRay.Api;
 [Route("[controller]")]
 public class XRayController : ControllerBase
 {
-    private readonly XRayStore _store;
-    private readonly XRayService _xrayService;
+    // No constructor injection — services accessed via Plugin.Instance
+    // since IPluginServiceRegistrator is unreliable in Jellyfin 10.11
 
-    public XRayController(XRayStore store, XRayService xrayService)
-    {
-        _store = store;
-        _xrayService = xrayService;
-    }
+    [HttpGet("resources")]
+    [AllowAnonymous]
+    public ActionResult<IEnumerable<string>> ListResources()
+        => Ok(Plugin.Instance?.GetEmbeddedResourceNames() ?? Array.Empty<string>());
 
     [HttpGet("query")]
     [AllowAnonymous]
@@ -27,30 +25,20 @@ public class XRayController : ControllerBase
         if (itemId == Guid.Empty)
             return BadRequest("itemId is required");
 
-        if (!_store.Exists(itemId))
+        var store = Plugin.Instance?.Store;
+        if (store is null)
+            return StatusCode(503, "Plugin not ready");
+
+        if (!store.Exists(itemId))
             return NotFound(new { message = "X-Ray data not yet generated for this item." });
 
-        var actors = _store.GetActorsAt(itemId, t);
-        return Ok(new XRayQueryResponse(itemId, t, actors));
+        return Ok(new XRayQueryResponse(itemId, t, store.GetActorsAt(itemId, t)));
     }
 
     [HttpGet("overlay.js")]
     [AllowAnonymous]
     public ContentResult OverlayScript()
-    {
-        var script = Plugin.Instance?.GetOverlayScript() ?? string.Empty;
-        return Content(script, "application/javascript");
-    }
-
-    /// <summary>
-    /// Diagnostic endpoint — lists all embedded resource names compiled into the assembly.
-    /// Call this to verify the correct EmbeddedResourcePath for configPage.html.
-    /// GET /XRay/resources
-    /// </summary>
-    [HttpGet("resources")]
-    [AllowAnonymous]
-    public ActionResult<IEnumerable<string>> ListResources()
-        => Ok(Plugin.Instance?.GetEmbeddedResourceNames() ?? Array.Empty<string>());
+        => Content(Plugin.Instance?.GetOverlayScript() ?? string.Empty, "application/javascript");
 
     [HttpPost("analyze/{itemId}")]
     [Authorize]
@@ -60,9 +48,13 @@ public class XRayController : ControllerBase
         if (itemId == Guid.Empty)
             return BadRequest("itemId is required");
 
+        var xray = Plugin.Instance?.XRay;
+        if (xray is null)
+            return StatusCode(503, "Plugin not ready");
+
         _ = Task.Run(async () =>
         {
-            try { await _xrayService.AnalyzeAsync(itemId, force, CancellationToken.None).ConfigureAwait(false); }
+            try { await xray.AnalyzeAsync(itemId, force, CancellationToken.None).ConfigureAwait(false); }
             catch { }
         });
 
@@ -71,9 +63,8 @@ public class XRayController : ControllerBase
 
     [HttpGet("status/{itemId}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(XRayStatusResponse), StatusCodes.Status200OK)]
     public ActionResult<XRayStatusResponse> Status([FromRoute] Guid itemId)
-        => Ok(new XRayStatusResponse(itemId, _store.Exists(itemId)));
+        => Ok(new XRayStatusResponse(itemId, Plugin.Instance?.Store?.Exists(itemId) ?? false));
 }
 
 public record XRayQueryResponse(Guid ItemId, int T, IReadOnlyList<string> Actors);
