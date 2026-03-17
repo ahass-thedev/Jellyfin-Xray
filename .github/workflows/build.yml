@@ -91,9 +91,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git rebase origin/main
           git add manifest.json
           git diff --staged --quiet || git commit -m "chore: update manifest for v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main || true
+          git push origin HEAD:main
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
