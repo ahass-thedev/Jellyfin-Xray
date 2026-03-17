@@ -28,15 +28,28 @@
     window.addEventListener('hashchange', onViewChange);
     const _push = history.pushState.bind(history);
     history.pushState = function (...a) { _push(...a); setTimeout(onViewChange, 200); };
+
+    // Fallback: watch for <video> element appearing in the DOM
+    // This catches players that load without a URL change (e.g. modal players)
+    new MutationObserver(() => {
+      if (document.querySelector('video') && !currentItemId) {
+        onViewChange();
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+
     onViewChange();
   }
 
   function onViewChange() {
     const href = location.href;
+    // Jellyfin 10.9 and earlier: #/videoosd, #/nowplaying
+    // Jellyfin 10.10+: #/video (React router)
     const isPlayer =
       href.includes('videoosd') ||
       href.includes('nowplaying') ||
-      !!document.querySelector('.videoOsdPage, #videoOsdPage');
+      /[#/]video[?&/]/.test(href) ||
+      href.endsWith('#/video') ||
+      !!document.querySelector('.videoOsdPage, #videoOsdPage, .osdContainer, [data-role="videoOsd"]');
 
     const m = href.match(/[?&]id=([a-f0-9-]{8,})/i);
     const itemId = m ? m[1] : null;
