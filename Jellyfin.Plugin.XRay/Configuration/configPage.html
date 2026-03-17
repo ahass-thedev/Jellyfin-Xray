@@ -20,15 +20,12 @@
           <div class="fieldDescription">Address of the face recognition sidecar process. Default: http://localhost:8756</div>
         </div>
 
-        <div class="checkboxContainer checkboxContainer-withDescription">
-          <label class="emby-checkbox-label">
-            <input id="AutoStartSidecar" name="AutoStartSidecar" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
-            <span class="checkmark"></span>
-            <span class="labelText">Auto-start sidecar on Jellyfin startup</span>
+        <div class="inputContainer">
+          <label style="display:flex;align-items:center;gap:0.5em;cursor:pointer;">
+            <input id="AutoStartSidecar" name="AutoStartSidecar" type="checkbox" style="width:1.1em;height:1.1em;cursor:pointer;" />
+            <span>Auto-start sidecar on Jellyfin startup</span>
           </label>
-          <div class="fieldDescription checkboxFieldDescription">
-            Uncheck if you manage the sidecar as a separate service (e.g. systemd).
-          </div>
+          <div class="fieldDescription">Uncheck if you manage the sidecar as a separate service (e.g. systemd).</div>
         </div>
 
         <div class="inputContainer">
@@ -65,11 +62,10 @@
           <h2 class="sectionTitle">Overlay</h2>
         </div>
 
-        <div class="checkboxContainer">
-          <label class="emby-checkbox-label">
-            <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
-            <span class="checkmark"></span>
-            <span class="labelText">Enable overlay in player</span>
+        <div class="inputContainer">
+          <label style="display:flex;align-items:center;gap:0.5em;cursor:pointer;">
+            <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" style="width:1.1em;height:1.1em;cursor:pointer;" />
+            <span>Enable overlay in player</span>
           </label>
         </div>
 
@@ -132,11 +128,11 @@
         status.textContent = "Checking…";
         status.style.color = "gray";
         ApiClient.fetch({ url: ApiClient.getUrl("XRay/sidecar-health"), type: "GET" }).then(function(result) {
-          if (result.reachable) {
-            status.textContent = "Sidecar is running at " + result.url;
+          if (result.Reachable) {
+            status.textContent = "Sidecar is running at " + result.Url;
             status.style.color = "green";
           } else {
-            status.innerHTML = "Sidecar unreachable at <a href=\"" + result.url + "\" style=\"color:red\">" + result.url + "</a>";
+            status.textContent = "Sidecar unreachable at " + result.Url;
             status.style.color = "red";
           }
         }).catch(function() {
