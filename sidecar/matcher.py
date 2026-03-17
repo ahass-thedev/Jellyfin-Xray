@@ -1,10 +1,11 @@
 """
-matcher.py — face recognition logic for the X-Ray sidecar.
+matcher.py — GPU-accelerated face recognition using InsightFace ArcFace.
 
 FaceMatcher:
-  - Loads and caches face encodings per actor image (keyed by path + mtime)
-  - Matches detected faces in a frame against a scoped set of actor encodings
-  - Returns actor names whose faces appear in the frame, in billing order
+  - Uses InsightFace buffalo_l model (RetinaFace detector + ArcFace embedder)
+    running via ONNX Runtime with CUDA execution provider on the 5070 Ti.
+  - Caches 512-dim ArcFace embeddings per actor reference image.
+  - Matches frame faces against actor embeddings by cosine similarity.
 """
 
 from __future__ import annotations
@@ -15,20 +16,39 @@ import io
 import logging
 import pickle
 from pathlib import Path
-from typing import Optional
 
-import face_recognition
+import cv2
 import numpy as np
 from PIL import Image
 
 log = logging.getLogger(__name__)
+
+# Cache version tag — bump this to invalidate old dlib/incompatible caches.
+_CACHE_VERSION = "if1"
+
+# InsightFace app singleton — initialised on first use.
+_face_app = None
+
+
+def _get_face_app():
+    global _face_app
+    if _face_app is None:
+        from insightface.app import FaceAnalysis
+        _face_app = FaceAnalysis(
+            name="buffalo_l",
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        )
+        # ctx_id=0 → first GPU; det_size=(640,640) catches small faces well.
+        _face_app.prepare(ctx_id=0, det_size=(640, 640))
+        log.info("InsightFace buffalo_l loaded (CUDA if available, else CPU fallback)")
+    return _face_app
 
 
 class FaceMatcher:
     def __init__(self, cache_dir: Path):
         self._cache_dir = cache_dir
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-        self._mem: dict[str, list] = {}  # in-memory LRU not needed at this scale
+        self._mem: dict[str, list] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -36,55 +56,37 @@ class FaceMatcher:
 
     def match(
         self,
-        frame: np.ndarray,
-        actors: dict[str, str],  # name → image_b64
+        frame: np.ndarray,          # RGB H×W×3
+        actors: dict[str, str],     # name → base64-encoded reference image
         tolerance: float = 0.55,
-        confidence_threshold: float = 0.60,
+        confidence_threshold: float = 0.05,
     ) -> list[str]:
         """
-        Detect faces in frame and match against scoped actor encodings.
+        Detect faces in frame and match against actor embeddings.
 
-        Args:
-            frame: RGB numpy array (H×W×3).
-            actors: Dict mapping actor name → base64-encoded reference image.
-            tolerance: Maximum face distance to count as a match (lower = stricter).
-            confidence_threshold: Minimum derived confidence to report a match.
-
-        Returns:
-            List of matched actor names, in the same order as `actors`.
+        tolerance maps to minimum cosine similarity as (1 − tolerance):
+          tolerance=0.55  →  min_sim=0.45  (default, permissive)
+          tolerance=0.30  →  min_sim=0.70  (strict)
         """
-        # Pre-scale frames smaller than 640x360 to 2x before detection.
-        # HOG requires faces to be ~35px+ tall; a face at 15% of a 180px frame is only 27px.
-        # Explicit 2x resize (vs number_of_times_to_upsample=2) avoids dlib's noisy
-        # internal pyramid that previously caused 739 false positives and OOM.
-        detect_frame = frame
-        if frame.shape[0] < 360 or frame.shape[1] < 640:
-            detect_frame = np.array(
-                Image.fromarray(frame).resize((frame.shape[1] * 2, frame.shape[0] * 2)),
-                dtype=np.uint8,
-            )
+        app = _get_face_app()
 
-        locations = face_recognition.face_locations(detect_frame, model="hog", number_of_times_to_upsample=1)
-        log.info("Frame %dx%d (detect %dx%d): %d face(s) detected",
-                 frame.shape[1], frame.shape[0],
-                 detect_frame.shape[1], detect_frame.shape[0], len(locations))
-        if not locations:
+        # InsightFace expects BGR
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        faces = app.get(frame_bgr)
+
+        log.info("Frame %dx%d: %d face(s) detected", frame.shape[1], frame.shape[0], len(faces))
+
+        if not faces:
+            return []
+        if len(faces) > 10:
+            log.warning("Skipping frame — %d detections looks like noise", len(faces))
             return []
 
-        # Sanity cap — more than 10 detections in a 320x180 tile is noise
-        if len(locations) > 10:
-            log.warning("Skipping frame — %d detections is almost certainly noise", len(locations))
-            return []
-
-        frame_encodings = face_recognition.face_encodings(detect_frame, known_face_locations=locations)
-        if not frame_encodings:
-            return []
-
-        # Build known encodings list, scoped to this item's cast
+        # Build known encodings list scoped to this item's cast
         known_names: list[str] = []
         known_encodings: list[np.ndarray] = []
+        no_enc = []
 
-        actors_with_no_encoding = []
         for name, image_b64 in actors.items():
             encs = self._get_encoding(name, image_b64)
             if encs:
@@ -92,39 +94,44 @@ class FaceMatcher:
                     known_names.append(name)
                     known_encodings.append(enc)
             else:
-                actors_with_no_encoding.append(name)
+                no_enc.append(name)
 
-        if actors_with_no_encoding:
-            log.warning("No encoding for: %s", ", ".join(actors_with_no_encoding))
-
+        if no_enc:
+            log.warning("No embedding for: %s", ", ".join(no_enc))
         if not known_encodings:
-            log.warning("No usable encodings for any actor — skipping frame")
+            log.warning("No usable embeddings for any actor — skipping frame")
             return []
 
+        min_sim = 1.0 - tolerance
         matched: set[str] = set()
 
-        for face_enc in frame_encodings:
-            distances = face_recognition.face_distance(known_encodings, face_enc)
-            best_idx = int(np.argmin(distances))
-            best_dist = float(distances[best_idx])
-            confidence = _dist_to_confidence(best_dist, tolerance)
-            log.info("Best match: '%s' dist=%.3f conf=%.2f (tolerance=%.2f threshold=%.2f)",
-                     known_names[best_idx], best_dist, confidence, tolerance, confidence_threshold)
-
-            if best_dist > tolerance:
+        for face in faces:
+            if face.embedding is None:
                 continue
 
+            sims = np.array([_cosine_sim(face.embedding, k) for k in known_encodings])
+            best_idx = int(np.argmax(sims))
+            best_sim = float(sims[best_idx])
+            confidence = _sim_to_confidence(best_sim, min_sim)
+
+            log.info(
+                "Best match: '%s' sim=%.3f conf=%.2f (min_sim=%.2f threshold=%.2f)",
+                known_names[best_idx], best_sim, confidence, min_sim, confidence_threshold,
+            )
+
+            if best_sim < min_sim:
+                continue
             if confidence < confidence_threshold:
                 continue
 
             matched.add(known_names[best_idx])
-            log.info("*** Matched '%s' dist=%.3f conf=%.2f", known_names[best_idx], best_dist, confidence)
+            log.info("*** Matched '%s' sim=%.3f conf=%.2f", known_names[best_idx], best_sim, confidence)
 
         # Return in original billing order
         return [name for name in actors if name in matched]
 
     # ------------------------------------------------------------------
-    # Encoding cache
+    # Embedding cache
     # ------------------------------------------------------------------
 
     def _get_encoding(self, name: str, image_b64: str) -> list[np.ndarray]:
@@ -158,44 +165,41 @@ class FaceMatcher:
 # ------------------------------------------------------------------
 
 def _compute_encoding(name: str, image_b64: str) -> list[np.ndarray]:
+    app = _get_face_app()
     try:
         img_bytes = base64.b64decode(image_b64)
-        image = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+        img_rgb = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
     except Exception as e:
         log.error("Failed to decode image for '%s': %s", name, e)
         return []
 
-    locations = face_recognition.face_locations(image, model="hog", number_of_times_to_upsample=2)
-    if not locations:
+    faces = app.get(img_bgr)
+    if not faces:
         log.warning("No faces detected in reference image for '%s'", name)
         return []
 
-    if len(locations) > 1:
-        log.debug("Multiple faces in reference image for '%s', using largest", name)
-        locations = [_largest_face(locations)]
+    # Pick the largest detected face (most likely the subject of a headshot)
+    face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+    if face.embedding is None:
+        return []
 
-    encodings = face_recognition.face_encodings(image, known_face_locations=locations)
-    log.debug("Computed encoding for '%s'", name)
-    return list(encodings)
-
-
-def _largest_face(locations: list[tuple]) -> tuple:
-    def area(loc):
-        top, right, bottom, left = loc
-        return (bottom - top) * (right - left)
-    return max(locations, key=area)
+    log.debug("Computed ArcFace embedding for '%s'", name)
+    return [face.embedding]
 
 
-def _dist_to_confidence(distance: float, tolerance: float = 0.55) -> float:
-    """
-    Map face distance to a 0–1 confidence score relative to tolerance.
-    confidence=1.0 when distance=0 (identical), confidence=0.0 when distance>=tolerance.
-    """
-    if distance >= tolerance:
+def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity. InsightFace ArcFace embeddings are already L2-normalised."""
+    return float(np.dot(a, b))
+
+
+def _sim_to_confidence(similarity: float, min_sim: float) -> float:
+    """Map cosine similarity to 0–1 confidence relative to the minimum threshold."""
+    if similarity <= min_sim:
         return 0.0
-    return 1.0 - (distance / tolerance)
+    return (similarity - min_sim) / (1.0 - min_sim)
 
 
 def _cache_key(image_b64: str) -> str:
-    """Cache key = SHA1 of the image bytes. Automatically invalidates if the image changes."""
-    return hashlib.sha1(image_b64.encode()).hexdigest()[:16]
+    """Cache key = SHA1 of image bytes + version tag. Version bump invalidates old caches."""
+    return hashlib.sha1(image_b64.encode()).hexdigest()[:16] + f"_{_CACHE_VERSION}"
