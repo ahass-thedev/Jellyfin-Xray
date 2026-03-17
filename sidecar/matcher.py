@@ -66,11 +66,18 @@ class FaceMatcher:
         known_names: list[str] = []
         known_encodings: list[np.ndarray] = []
 
+        actors_with_no_encoding = []
         for name, image_b64 in actors.items():
             encs = self._get_encoding(name, image_b64)
-            for enc in encs:
-                known_names.append(name)
-                known_encodings.append(enc)
+            if encs:
+                for enc in encs:
+                    known_names.append(name)
+                    known_encodings.append(enc)
+            else:
+                actors_with_no_encoding.append(name)
+
+        if actors_with_no_encoding:
+            log.warning("No encoding for: %s", ", ".join(actors_with_no_encoding))
 
         if not known_encodings:
             log.warning("No usable encodings for any actor — skipping frame")
@@ -82,6 +89,8 @@ class FaceMatcher:
             distances = face_recognition.face_distance(known_encodings, face_enc)
             best_idx = int(np.argmin(distances))
             best_dist = float(distances[best_idx])
+            log.info("Best match: '%s' dist=%.3f (tolerance=%.2f, confidence=%.2f)",
+                     known_names[best_idx], best_dist, tolerance, _dist_to_confidence(best_dist))
 
             if best_dist > tolerance:
                 continue
@@ -91,7 +100,7 @@ class FaceMatcher:
                 continue
 
             matched.add(known_names[best_idx])
-            log.debug("Matched '%s' (dist=%.3f, conf=%.2f)", known_names[best_idx], best_dist, confidence)
+            log.info("Matched '%s' (dist=%.3f, conf=%.2f)", known_names[best_idx], best_dist, confidence)
 
         # Return in original billing order
         return [name for name in actors if name in matched]
