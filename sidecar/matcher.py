@@ -53,7 +53,7 @@ class FaceMatcher:
         Returns:
             List of matched actor names, in the same order as `actors`.
         """
-        locations = face_recognition.face_locations(frame, model="hog")
+        locations = face_recognition.face_locations(frame, model="hog", number_of_times_to_upsample=2)
         log.info("Frame %dx%d: %d face(s) detected", frame.shape[1], frame.shape[0], len(locations))
         if not locations:
             return []
@@ -138,7 +138,7 @@ def _compute_encoding(name: str, image_b64: str) -> list[np.ndarray]:
         log.error("Failed to decode image for '%s': %s", name, e)
         return []
 
-    locations = face_recognition.face_locations(image, model="hog")
+    locations = face_recognition.face_locations(image, model="hog", number_of_times_to_upsample=2)
     if not locations:
         log.warning("No faces detected in reference image for '%s'", name)
         return []
