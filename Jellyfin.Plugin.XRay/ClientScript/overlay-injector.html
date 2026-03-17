@@ -5,22 +5,39 @@
 <div data-role="page" id="XRayOverlayInjector">
 <script type="text/javascript">
 (function () {
-  // Fetch plugin config then conditionally inject the overlay script
-  fetch('/XRay/client-config')
-    .then(function (r) { return r.json(); })
-    .then(function (cfg) {
-      if (cfg.overlayEnabled === false) return;
-      window._xrayMaxActors = cfg.maxActors || 4;
-      var s = document.createElement('script');
-      s.src = '/XRay/overlay.js';
-      document.head.appendChild(s);
-    })
-    .catch(function () {
-      // Fallback: inject unconditionally if config endpoint fails
-      var s = document.createElement('script');
-      s.src = '/XRay/overlay.js';
-      document.head.appendChild(s);
-    });
+  function inject() {
+    if (window.__xrayLoaded) {
+      // Already active this session — go straight home
+      Emby.Page.navigate('index.html');
+      return;
+    }
+    fetch('/XRay/client-config')
+      .then(function (r) { return r.json(); })
+      .then(function (cfg) {
+        window._xrayMaxActors = cfg.MaxActors || 4;
+        if (cfg.OverlayEnabled === false) {
+          Emby.Page.navigate('index.html');
+          return;
+        }
+        var s = document.createElement('script');
+        s.src = '/XRay/overlay.js';
+        s.onload = function () {
+          setTimeout(function () { Emby.Page.navigate('index.html'); }, 300);
+        };
+        s.onerror = function () { Emby.Page.navigate('index.html'); };
+        document.head.appendChild(s);
+      })
+      .catch(function () {
+        var s = document.createElement('script');
+        s.src = '/XRay/overlay.js';
+        s.onload = function () {
+          setTimeout(function () { Emby.Page.navigate('index.html'); }, 300);
+        };
+        document.head.appendChild(s);
+      });
+  }
+
+  document.querySelector('#XRayOverlayInjector').addEventListener('pageshow', inject);
 })();
 </script>
 </div>

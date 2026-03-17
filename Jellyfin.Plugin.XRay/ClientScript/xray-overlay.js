@@ -1,41 +1,45 @@
 /**
  * xray-overlay.js
- * Served by Jellyfin at /XRay/overlay.js and injected into the player page.
- * Polls /XRay/query on video.currentTime and renders actor cards.
+ * Left-side X-Ray panel — slides in on mouse move, matches Amazon Prime X-Ray style.
+ * Loaded once per session by visiting the X-Ray sidebar item.
  */
 (function () {
   'use strict';
 
-  const OVERLAY_ID = 'jellyfin-xray-root';
-  const POLL_MS = 3000;
-  const HIDE_DELAY_MS = 5000;
+  if (window.__xrayLoaded) return;
+  window.__xrayLoaded = true;
 
-  let pollTimer = null;
-  let lastKey = '';
-  let hideTimer = null;
-  let castMeta = {};
+  const POLL_MS      = 3000;
+  const IDLE_HIDE_MS = 4000;   // hide 4s after last mouse move (while playing)
+
+  let pollTimer     = null;
+  let idleTimer     = null;
+  let lastKey       = '';
+  let castMeta      = {};
   let currentItemId = null;
+  let playerEl      = null;
 
   // ------------------------------------------------------------------
-  // SPA router — watch for Jellyfin page transitions
+  // SPA router — detect player page
   // ------------------------------------------------------------------
 
   function observeRouter() {
     document.addEventListener('viewshow', onViewChange);
     window.addEventListener('hashchange', onViewChange);
     const _push = history.pushState.bind(history);
-    history.pushState = function (...a) { _push(...a); setTimeout(onViewChange, 150); };
+    history.pushState = function (...a) { _push(...a); setTimeout(onViewChange, 200); };
     onViewChange();
   }
 
   function onViewChange() {
+    const href = location.href;
     const isPlayer =
-      location.href.includes('videoosd') ||
-      location.href.includes('nowplaying') ||
+      href.includes('videoosd') ||
+      href.includes('nowplaying') ||
       !!document.querySelector('.videoOsdPage, #videoOsdPage');
 
-    const idMatch = location.href.match(/[?&]id=([a-f0-9-]+)/i);
-    const itemId = idMatch ? idMatch[1] : null;
+    const m = href.match(/[?&]id=([a-f0-9-]{8,})/i);
+    const itemId = m ? m[1] : null;
 
     if (isPlayer && itemId && itemId !== currentItemId) {
       currentItemId = itemId;
@@ -51,7 +55,7 @@
     const video = document.querySelector('video');
     if (video) {
       setup(video, itemId);
-    } else if (tries < 30) {
+    } else if (tries < 40) {
       setTimeout(() => waitForVideo(itemId, tries + 1), 300);
     }
   }
@@ -62,48 +66,109 @@
 
   function setup(video, itemId) {
     injectStyles();
-    castMeta = {};
-    lastKey = '';
+    castMeta  = {};
+    lastKey   = '';
 
-    const playerEl = video.closest('[class*="player"], .videoPlayerContainer, .htmlVideoPlayer')
-      || video.parentElement;
-    if (getComputedStyle(playerEl).position === 'static') playerEl.style.position = 'relative';
+    // Find the positioned container the video lives in
+    playerEl = findContainer(video);
 
+    // Build the panel DOM
     const root = document.createElement('div');
-    root.id = OVERLAY_ID;
+    root.id = 'xray-root';
     root.innerHTML = `
       <div id="xray-panel">
+        <div id="xray-header"><span id="xray-logo">X-Ray</span></div>
         <div id="xray-cards"></div>
-        <span id="xray-label">X-Ray</span>
       </div>`;
     playerEl.appendChild(root);
+
+    // Mouse watcher on the whole player
+    playerEl.addEventListener('mousemove',  onMouseMove);
+    playerEl.addEventListener('mouseleave', onMouseLeave);
 
     prefetchCast(itemId);
     startPolling(video, itemId);
 
-    video.addEventListener('pause', onPause);
-    video.addEventListener('play', onPlay);
+    video.addEventListener('pause',   onPause);
+    video.addEventListener('play',    onPlay);
     video.addEventListener('emptied', teardown);
+  }
+
+  function findContainer(video) {
+    // Walk up until we hit something positioned (the player shell)
+    let el = video.parentElement;
+    while (el && el !== document.body) {
+      const pos = getComputedStyle(el).position;
+      if (pos === 'relative' || pos === 'absolute' || pos === 'fixed') return el;
+      el = el.parentElement;
+    }
+    const fallback = video.closest('[class*="player"], .videoPlayerContainer, .htmlVideoPlayer')
+                  || video.parentElement;
+    if (getComputedStyle(fallback).position === 'static') fallback.style.position = 'relative';
+    return fallback;
   }
 
   function teardown() {
     stopPolling();
-    clearTimeout(hideTimer);
-    const el = document.getElementById(OVERLAY_ID);
+    clearTimeout(idleTimer);
+    const el = document.getElementById('xray-root');
     if (el) el.remove();
-    lastKey = '';
+    if (playerEl) {
+      playerEl.removeEventListener('mousemove',  onMouseMove);
+      playerEl.removeEventListener('mouseleave', onMouseLeave);
+      playerEl = null;
+    }
+    lastKey  = '';
     castMeta = {};
   }
+
+  // ------------------------------------------------------------------
+  // Mouse / visibility
+  // ------------------------------------------------------------------
+
+  let _video = null; // saved for pause check
+
+  function onMouseMove() {
+    showPanel();
+    resetIdleTimer();
+  }
+
+  function onMouseLeave() {
+    if (_video && _video.paused) return; // keep visible when paused
+    scheduleHide();
+  }
+
+  function showPanel() {
+    const p = document.getElementById('xray-panel');
+    if (p) p.classList.add('xray-visible');
+  }
+
+  function hidePanel() {
+    const p = document.getElementById('xray-panel');
+    if (p) p.classList.remove('xray-visible');
+  }
+
+  function resetIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(scheduleHide, IDLE_HIDE_MS);
+  }
+
+  function scheduleHide() {
+    clearTimeout(idleTimer);
+    hidePanel();
+  }
+
+  function onPause() { clearTimeout(idleTimer); showPanel(); }
+  function onPlay()  { resetIdleTimer(); }
 
   // ------------------------------------------------------------------
   // Polling
   // ------------------------------------------------------------------
 
   function startPolling(video, itemId) {
+    _video = video;
     stopPolling();
-    pollTimer = setInterval(() => {
-      if (!video.paused) tick(video, itemId);
-    }, POLL_MS);
+    pollTimer = setInterval(() => tick(video, itemId), POLL_MS);
   }
 
   function stopPolling() {
@@ -115,18 +180,17 @@
     try {
       const resp = await fetch(`/XRay/query?itemId=${itemId}&t=${t}`);
       if (resp.status === 404) {
-        // No data yet — request analysis
         fetch(`/XRay/analyze/${itemId}`, { method: 'POST' }).catch(() => {});
         return;
       }
       if (!resp.ok) return;
       const data = await resp.json();
       renderActors(data.actors || []);
-    } catch (_) { /* sidecar unavailable */ }
+    } catch (_) { /* network / sidecar down */ }
   }
 
   // ------------------------------------------------------------------
-  // Cast metadata prefetch (for images + roles)
+  // Cast metadata
   // ------------------------------------------------------------------
 
   async function prefetchCast(itemId) {
@@ -148,36 +212,33 @@
   // ------------------------------------------------------------------
 
   function renderActors(actors) {
-    const max = window._xrayMaxActors || 4;
+    const max     = window._xrayMaxActors || 4;
     const visible = actors.slice(0, max);
-    const key = visible.join(',');
+    const key     = visible.join(',');
     if (key === lastKey) return;
     lastKey = key;
 
-    const panel  = document.getElementById('xray-panel');
-    const cards  = document.getElementById('xray-cards');
-    if (!panel || !cards) return;
-
+    const cards = document.getElementById('xray-cards');
+    if (!cards) return;
     cards.innerHTML = '';
 
-    if (visible.length === 0) {
-      scheduleHide(panel);
-      return;
-    }
+    if (visible.length === 0) return;
 
-    cancelHide();
-    panel.style.opacity = '1';
+    const server = window.ApiClient?.serverAddress() ?? '';
 
     visible.forEach((name, i) => {
       const meta = castMeta[name] || {};
       const card = document.createElement('div');
       card.className = 'xray-card';
-      card.style.animationDelay = `${i * 60}ms`;
+      card.style.animationDelay = `${i * 55}ms`;
 
-      const server = window.ApiClient?.serverAddress() ?? '';
-      const thumbHtml = (meta.id && meta.tag && server)
-        ? `<img class="xray-thumb" src="${server}/Items/${meta.id}/Images/Primary?tag=${meta.tag}&maxHeight=72" alt="${esc(name)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
-        + `<div class="xray-initial" style="display:none">${initials(name)}</div>`
+      const imgUrl = (meta.id && meta.tag && server)
+        ? `${server}/Items/${meta.id}/Images/Primary?tag=${meta.tag}&maxWidth=96&maxHeight=128`
+        : null;
+
+      const thumbHtml = imgUrl
+        ? `<img class="xray-thumb" src="${imgUrl}" alt="${esc(name)}"
+               onerror="this.parentElement.innerHTML='<div class=xray-initial>${initials(name)}</div>'">`
         : `<div class="xray-initial">${initials(name)}</div>`;
 
       card.innerHTML = `
@@ -190,20 +251,8 @@
     });
   }
 
-  function scheduleHide(panel) {
-    if (hideTimer) return;
-    hideTimer = setTimeout(() => { panel.style.opacity = '0'; hideTimer = null; }, HIDE_DELAY_MS);
-  }
-
-  function cancelHide() {
-    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  }
-
-  function onPause() { scheduleHide(document.getElementById('xray-panel')); }
-  function onPlay()  { cancelHide(); }
-
   // ------------------------------------------------------------------
-  // Styles (injected once)
+  // Styles
   // ------------------------------------------------------------------
 
   function injectStyles() {
@@ -211,66 +260,130 @@
     const s = document.createElement('style');
     s.id = 'xray-styles';
     s.textContent = `
-      #jellyfin-xray-root {
-        position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+      #xray-root {
+        position: absolute;
+        top: 0; left: 0; bottom: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
         pointer-events: none;
       }
+
       #xray-panel {
-        display: flex; flex-wrap: wrap; gap: 8px;
-        align-items: flex-start;
-        padding: 12px 16px 20px;
-        background: linear-gradient(180deg,rgba(0,0,0,.72) 0%,transparent 100%);
-        min-height: 64px;
-        transition: opacity .4s ease;
+        pointer-events: auto;
+        width: 210px;
+        background: rgba(0,0,0,0.82);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(-100%);
         opacity: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        position: relative;
+        transition: transform 0.22s ease, opacity 0.22s ease;
+        max-height: 75vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: none;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        border-radius: 0 6px 6px 0;
       }
-      #xray-label {
-        position: absolute; top: 14px; right: 16px;
-        font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
-        color: rgba(255,255,255,.35); text-transform: uppercase;
-        pointer-events: none;
+      #xray-panel::-webkit-scrollbar { display: none; }
+
+      #xray-panel.xray-visible {
+        transform: translateX(0);
+        opacity: 1;
       }
-      #xray-cards { display: flex; flex-wrap: wrap; gap: 8px; pointer-events: auto; }
+
+      #xray-header {
+        padding: 12px 14px 9px;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+        flex-shrink: 0;
+      }
+
+      #xray-logo {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: rgba(255,255,255,0.9);
+        text-transform: uppercase;
+      }
+
+      #xray-cards {
+        display: flex;
+        flex-direction: column;
+        padding: 6px 0;
+      }
+
       .xray-card {
-        display: flex; align-items: center; gap: 8px;
-        background: rgba(255,255,255,.12);
-        border: 1px solid rgba(255,255,255,.2);
-        border-radius: 8px; padding: 5px 10px 5px 5px;
-        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-        max-width: 190px;
-        animation: xrayIn .3s ease both;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        animation: xraySlide 0.22s ease both;
+        transition: background 0.15s;
+        cursor: default;
       }
-      @keyframes xrayIn {
-        from { opacity:0; transform:translateY(-5px); }
-        to   { opacity:1; transform:translateY(0); }
+      .xray-card:hover {
+        background: rgba(255,255,255,0.07);
       }
-      .xray-card:hover .xray-role { max-height: 20px !important; opacity: 1 !important; }
-      .xray-thumb-wrap { flex-shrink: 0; width: 36px; height: 36px; }
+
+      @keyframes xraySlide {
+        from { opacity: 0; transform: translateX(-12px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+
+      .xray-thumb-wrap {
+        flex-shrink: 0;
+        width: 44px;
+        height: 58px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.08);
+      }
+
       .xray-thumb {
-        width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-        border: 1.5px solid rgba(255,255,255,.25);
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: top;
         display: block;
       }
+
       .xray-initial {
-        width: 36px; height: 36px; border-radius: 50%;
-        background: rgba(255,255,255,.15); border: 1.5px solid rgba(255,255,255,.25);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 12px; font-weight: 600; color: rgba(255,255,255,.75);
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        font-weight: 700;
+        color: rgba(255,255,255,0.55);
+        background: rgba(255,255,255,0.06);
       }
-      .xray-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+      .xray-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
       .xray-name {
-        font-size: 12px; font-weight: 600; color: #fff;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        text-shadow: 0 1px 3px rgba(0,0,0,.6);
+        font-size: 12px;
+        font-weight: 600;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.3;
       }
+
       .xray-role {
-        font-size: 11px; color: rgba(255,255,255,.6);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        max-height: 0; opacity: 0;
-        transition: max-height .2s, opacity .2s;
-        text-shadow: 0 1px 3px rgba(0,0,0,.5);
+        font-size: 11px;
+        color: rgba(255,255,255,0.52);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.3;
       }
     `;
     document.head.appendChild(s);
@@ -286,18 +399,18 @@
 
   function esc(str) {
     return str.replace(/[&<>"']/g, c =>
-      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+      ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'": '&#39;' }[c]));
   }
 
   // ------------------------------------------------------------------
-  // Boot — wait for Jellyfin ApiClient then start watching routes
+  // Boot
   // ------------------------------------------------------------------
 
   function boot(tries = 0) {
     if (window.ApiClient) {
-      // Expose config hook so dashboard settings take effect live
-      window._xrayMaxActors = 4; // overridden by configPage on load
+      window._xrayMaxActors = window._xrayMaxActors || 4;
       observeRouter();
+      console.log('[X-Ray] overlay active');
     } else if (tries < 40) {
       setTimeout(() => boot(tries + 1), 250);
     }
