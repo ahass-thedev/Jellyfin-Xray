@@ -47,14 +47,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 Name = Name,
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
             },
-            new PluginPageInfo
-            {
-                Name = "XRayOverlayInjector",
-                DisplayName = "X-Ray",
-                EmbeddedResourcePath = $"{GetType().Namespace}.ClientScript.overlay-injector.html",
-                EnableInMainMenu = true,
-                MenuIcon = "movie",
-            },
         };
 
     public IEnumerable<string> GetEmbeddedResourceNames()

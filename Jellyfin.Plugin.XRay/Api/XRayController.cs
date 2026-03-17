@@ -55,6 +55,24 @@ public class XRayController : ControllerBase
     public ContentResult OverlayScript()
         => Content(Plugin.Instance?.GetOverlayScript() ?? string.Empty, "application/javascript");
 
+    /// <summary>
+    /// Loaded automatically on every Jellyfin page via the injected script tag.
+    /// Returns a tiny loader that bootstraps overlay.js when OverlayEnabled is true.
+    /// Returns an empty response when disabled so the browser caches the no-op.
+    /// </summary>
+    [HttpGet("autoboot.js")]
+    [AllowAnonymous]
+    public ContentResult AutobootScript()
+    {
+        var cfg = Plugin.Instance?.Configuration;
+        if (cfg?.OverlayEnabled != true)
+            return Content(string.Empty, "application/javascript");
+
+        var maxActors = cfg.MaxActorsDisplayed;
+        var script = $"(function(){{if(window.__xrayLoaded)return;window._xrayMaxActors={maxActors};var s=document.createElement('script');s.src='/XRay/overlay.js';document.head.appendChild(s);}})();";
+        return Content(script, "application/javascript");
+    }
+
     [HttpPost("analyze/{itemId}")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status202Accepted)]

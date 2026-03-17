@@ -67,6 +67,7 @@
             <input id="OverlayEnabled" name="OverlayEnabled" type="checkbox" style="width:1.1em;height:1.1em;cursor:pointer;" />
             <span>Enable overlay in player</span>
           </label>
+          <div class="fieldDescription">When enabled, the X-Ray actor panel loads automatically on every Jellyfin page — no manual activation needed.</div>
         </div>
 
         <div class="inputContainer">
@@ -79,12 +80,6 @@
           <button id="SaveBtn" class="raised button-submit block emby-button">Save</button>
         </div>
       </form>
-
-      <!-- Overlay status -->
-      <div class="sectionTitleContainer" style="margin-top: 2em;">
-        <h2 class="sectionTitle">Overlay status</h2>
-      </div>
-      <div id="OverlayStatus" style="margin-bottom: 1em; color: gray;">Checking…</div>
 
       <!-- Sidecar status check -->
       <div class="sectionTitleContainer" style="margin-top: 2em;">
@@ -112,7 +107,6 @@
           page.querySelector("#MaxActorsDisplayed").value = config.MaxActorsDisplayed ?? 4;
 
           window._xrayMaxActors = config.MaxActorsDisplayed || 4;
-          XRayConfig.activateOverlay(page, config.OverlayEnabled !== false);
         });
       },
 
@@ -130,34 +124,6 @@
             Dashboard.processPluginConfigurationUpdateResult();
           });
         });
-      },
-
-      activateOverlay: function(page, enabled) {
-        var statusEl = page.querySelector("#OverlayStatus");
-        if (!enabled) {
-          localStorage.removeItem("xray_overlay");
-          statusEl.textContent = "Overlay is disabled in settings.";
-          statusEl.style.color = "gray";
-          return;
-        }
-        if (window.__xrayLoaded) {
-          statusEl.textContent = "Overlay is active for this session.";
-          statusEl.style.color = "green";
-          return;
-        }
-        // Inject overlay.js into the page and persist activation
-        localStorage.setItem("xray_overlay", "1");
-        var s = document.createElement("script");
-        s.src = "/XRay/overlay.js";
-        s.onload = function() {
-          statusEl.textContent = "Overlay activated — move your mouse over the player to show actor cards.";
-          statusEl.style.color = "green";
-        };
-        s.onerror = function() {
-          statusEl.textContent = "Failed to load overlay script from /XRay/overlay.js";
-          statusEl.style.color = "red";
-        };
-        document.head.appendChild(s);
       },
 
       checkSidecar: function(page) {

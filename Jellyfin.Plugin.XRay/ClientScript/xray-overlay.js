@@ -152,8 +152,9 @@
       playerEl.removeEventListener('mouseleave', onMouseLeave);
       playerEl = null;
     }
-    lastKey  = '';
-    castMeta = {};
+    lastKey       = '';
+    castMeta      = {};
+    currentItemId = null;
   }
 
   // ------------------------------------------------------------------

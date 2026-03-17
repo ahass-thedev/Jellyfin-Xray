@@ -1,8 +1,10 @@
+using Jellyfin.Plugin.XRay.Api;
 using Jellyfin.Plugin.XRay.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,6 +21,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddHostedService<XRayInitializer>();
+        serviceCollection.AddTransient<IStartupFilter, XRayStartupFilter>();
     }
 }
 
