@@ -3,7 +3,6 @@ using Jellyfin.Plugin.XRay.Configuration;
 using Jellyfin.Plugin.XRay.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
-using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
@@ -12,24 +11,17 @@ namespace Jellyfin.Plugin.XRay;
 
 /// <summary>
 /// The X-Ray plugin entry point.
-/// Services are created here and exposed as static properties so the controller
-/// and scheduled tasks can access them without requiring DI registration.
+/// Follows the minimal-constructor pattern required by Jellyfin's plugin system.
+/// Services are registered via DI through PluginServiceRegistrator.
 /// </summary>
-public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
+public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     private readonly ILogger<Plugin> _logger;
-    private SidecarManager? _sidecarManager;
-    private bool _disposed;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="Plugin"/> class.
-    /// Jellyfin passes ILibraryManager via constructor injection automatically.
-    /// </summary>
     public Plugin(
         IApplicationPaths applicationPaths,
         IXmlSerializer xmlSerializer,
-        ILoggerFactory loggerFactory,
-        ILibraryManager libraryManager)
+        ILoggerFactory loggerFactory)
         : base(applicationPaths, xmlSerializer)
     {
         _logger = loggerFactory.CreateLogger<Plugin>();
@@ -37,21 +29,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
 
         Directory.CreateDirectory(DataPath);
         Directory.CreateDirectory(EncodingCachePath);
-
-        // Instantiate services — exposed statically for controller/task access
-        Store = new XRayStore(loggerFactory.CreateLogger<XRayStore>());
-        SidecarHttpClient = new SidecarClient(loggerFactory.CreateLogger<SidecarClient>());
-        Metadata = new MetadataService(libraryManager, loggerFactory.CreateLogger<MetadataService>());
-        XRay = new XRayService(Metadata, SidecarHttpClient, Store, loggerFactory.CreateLogger<XRayService>());
-
-        if (Configuration.AutoStartSidecar)
-        {
-            _sidecarManager = new SidecarManager(
-                applicationPaths,
-                Configuration,
-                loggerFactory.CreateLogger<SidecarManager>());
-            _sidecarManager.Start();
-        }
     }
 
     /// <summary>Gets the singleton plugin instance.</summary>
@@ -67,21 +44,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
     public override string Description =>
         "Shows actor information in the video player, similar to Amazon Prime X-Ray.";
 
-    /// <summary>Gets the plugin data directory (xray JSON files).</summary>
+    /// <summary>Gets the plugin data directory path.</summary>
     public string DataPath => Path.Combine(ApplicationPaths.DataPath, "xray");
 
-    /// <summary>Gets the encoding cache directory (Python .pkl files).</summary>
+    /// <summary>Gets the encoding cache directory path.</summary>
     public string EncodingCachePath => Path.Combine(ApplicationPaths.CachePath, "xray-encodings");
 
-    // Services exposed for use by controllers and scheduled tasks
-    public XRayStore Store { get; private set; } = null!;
-    public SidecarClient SidecarHttpClient { get; private set; } = null!;
-    public MetadataService Metadata { get; private set; } = null!;
-    public XRayService XRay { get; private set; } = null!;
-
     /// <inheritdoc />
-    public IEnumerable<PluginPageInfo> GetPages() =>
-        new[]
+    public IEnumerable<PluginPageInfo> GetPages()
+    {
+        return new[]
         {
             new PluginPageInfo
             {
@@ -89,6 +61,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
             }
         };
+    }
 
     /// <summary>Returns the embedded JS overlay script as a string.</summary>
     public string GetOverlayScript()
@@ -100,27 +73,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
             _logger.LogError("Could not find embedded resource: {Name}", resourceName);
             return string.Empty;
         }
+
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    /// <summary>Releases resources.</summary>
-    protected virtual void Dispose(bool disposing)
-    {
-        if (_disposed) return;
-        if (disposing)
-        {
-            _sidecarManager?.Stop();
-            _sidecarManager = null;
-            SidecarHttpClient?.Dispose();
-        }
-        _disposed = true;
     }
 }
