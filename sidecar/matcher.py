@@ -53,9 +53,14 @@ class FaceMatcher:
         Returns:
             List of matched actor names, in the same order as `actors`.
         """
-        locations = face_recognition.face_locations(frame, model="hog", number_of_times_to_upsample=2)
+        locations = face_recognition.face_locations(frame, model="hog", number_of_times_to_upsample=1)
         log.info("Frame %dx%d: %d face(s) detected", frame.shape[1], frame.shape[0], len(locations))
         if not locations:
+            return []
+
+        # Sanity cap — more than 10 detections in a 320x180 tile is noise
+        if len(locations) > 10:
+            log.warning("Skipping frame — %d detections is almost certainly noise", len(locations))
             return []
 
         frame_encodings = face_recognition.face_encodings(frame, known_face_locations=locations)
