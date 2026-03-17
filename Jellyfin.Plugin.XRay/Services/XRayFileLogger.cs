@@ -13,18 +13,34 @@ public sealed class XRayFileLogger : IDisposable
 
     public XRayFileLogger(string dataPath)
     {
-        var logPath = Path.Combine(dataPath, "xray.log");
-        _writer = new StreamWriter(logPath, append: true, System.Text.Encoding.UTF8) { AutoFlush = true };
-        Write("INF", "=== X-Ray plugin started ===");
+        try
+        {
+            Directory.CreateDirectory(dataPath);
+            var logPath = Path.Combine(dataPath, "xray.log");
+            _writer = new StreamWriter(logPath, append: true, System.Text.Encoding.UTF8) { AutoFlush = true };
+            Write("INF", "=== X-Ray plugin started ===");
+        }
+        catch
+        {
+            // If the log file can't be opened, fall back to a no-op writer
+            _writer = StreamWriter.Null;
+        }
     }
 
     internal void Write(string level, string message)
     {
         var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz}] [{level}] {message}";
-        lock (_lock)
+        try
         {
-            if (!_disposed)
-                _writer.WriteLine(line);
+            lock (_lock)
+            {
+                if (!_disposed)
+                    _writer.WriteLine(line);
+            }
+        }
+        catch
+        {
+            // Never let a log write crash the caller
         }
     }
 

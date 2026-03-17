@@ -97,10 +97,7 @@ public class MetadataService
         foreach (var root in candidates)
         {
             if (!Directory.Exists(root))
-            {
-                _logger.LogDebug("No trickplay at {Path}", root);
                 continue;
-            }
 
             var widthDirs = Directory
                 .EnumerateDirectories(root)
@@ -113,11 +110,12 @@ public class MetadataService
                 continue;
 
             var best = widthDirs[0].path;
-            _logger.LogDebug("Using trickplay dir {Path} for {ItemId}", best, itemId);
+            _logger.LogInformation("Using trickplay dir {Path} for {ItemId}", best, itemId);
             return best;
         }
 
-        _logger.LogDebug("No trickplay found for {ItemId} in any candidate path", itemId);
+        _logger.LogWarning("No trickplay found for {ItemId}. DataPath={DataPath} Checked: {Paths}",
+            itemId, _appPaths.DataPath, string.Join(", ", candidates));
         return null;
     }
 

@@ -48,6 +48,7 @@ public class XRayInitializer : Microsoft.Extensions.Hosting.IHostedService
 
         var fileLogger = new XRayFileLogger(plugin.DataPath);
         plugin.FileLogger = fileLogger;
+        fileLogger.Write("INF", $"Plugin starting. PluginDataPath={plugin.DataPath} AppDataPath={_appPaths.DataPath}");
 
         plugin.Store = new XRayStore(new TeeLogger<XRayStore>(_loggerFactory.CreateLogger<XRayStore>(), fileLogger));
         plugin.SidecarHttpClient = new SidecarClient(new TeeLogger<SidecarClient>(_loggerFactory.CreateLogger<SidecarClient>(), fileLogger));
