@@ -127,7 +127,9 @@
         var status = page.querySelector("#SidecarStatus");
         status.textContent = "Checking…";
         status.style.color = "gray";
-        ApiClient.fetch({ url: ApiClient.getUrl("XRay/sidecar-health"), type: "GET" }).then(function(result) {
+        ApiClient.fetch({ url: ApiClient.getUrl("XRay/sidecar-health"), type: "GET" }).then(function(response) {
+          return response.json();
+        }).then(function(result) {
           if (result.Reachable) {
             status.textContent = "Sidecar is running at " + result.Url;
             status.style.color = "green";
