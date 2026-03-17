@@ -39,12 +39,31 @@ public class SidecarClient : IDisposable
         IReadOnlyList<ActorInfo> cast,
         CancellationToken ct)
     {
+        var actors = new List<ActorRequest>();
+        foreach (var a in cast)
+        {
+            if (a.ImagePath is null || !File.Exists(a.ImagePath))
+                continue;
+            try
+            {
+                var imageB64 = Convert.ToBase64String(await File.ReadAllBytesAsync(a.ImagePath, ct).ConfigureAwait(false));
+                actors.Add(new ActorRequest(a.Name, imageB64));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not read image for {Actor}", a.Name);
+            }
+        }
+
+        if (actors.Count == 0)
+        {
+            _logger.LogDebug("No actor images available for this item — skipping sidecar call");
+            return Array.Empty<string>();
+        }
+
         var request = new MatchRequest(
             FrameB64: Convert.ToBase64String(frameBytes),
-            Actors: cast
-                .Where(a => a.ImagePath is not null)
-                .Select(a => new ActorRequest(a.Name, a.ImagePath!))
-                .ToList(),
+            Actors: actors,
             Tolerance: Plugin.Instance?.Configuration.FaceMatchTolerance ?? 0.55,
             ConfidenceThreshold: Plugin.Instance?.Configuration.FaceConfidenceThreshold ?? 0.60);
 
@@ -107,7 +126,7 @@ public class SidecarClient : IDisposable
 
     private record ActorRequest(
         [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("image_path")] string ImagePath);
+        [property: JsonPropertyName("image_b64")] string ImageB64);
 
     private record MatchResponse(
         [property: JsonPropertyName("matches")] List<string> Matches);

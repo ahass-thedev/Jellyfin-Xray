@@ -9,7 +9,9 @@ FaceMatcher:
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import logging
 import pickle
 from pathlib import Path
@@ -17,6 +19,7 @@ from typing import Optional
 
 import face_recognition
 import numpy as np
+from PIL import Image
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +37,7 @@ class FaceMatcher:
     def match(
         self,
         frame: np.ndarray,
-        actors: dict[str, str],  # name → image_path
+        actors: dict[str, str],  # name → image_b64
         tolerance: float = 0.55,
         confidence_threshold: float = 0.60,
     ) -> list[str]:
@@ -43,7 +46,7 @@ class FaceMatcher:
 
         Args:
             frame: RGB numpy array (H×W×3).
-            actors: Dict mapping actor name → path to their reference image.
+            actors: Dict mapping actor name → base64-encoded reference image.
             tolerance: Maximum face distance to count as a match (lower = stricter).
             confidence_threshold: Minimum derived confidence to report a match.
 
@@ -62,8 +65,8 @@ class FaceMatcher:
         known_names: list[str] = []
         known_encodings: list[np.ndarray] = []
 
-        for name, image_path in actors.items():
-            encs = self._get_encoding(name, image_path)
+        for name, image_b64 in actors.items():
+            encs = self._get_encoding(name, image_b64)
             for enc in encs:
                 known_names.append(name)
                 known_encodings.append(enc)
@@ -96,8 +99,8 @@ class FaceMatcher:
     # Encoding cache
     # ------------------------------------------------------------------
 
-    def _get_encoding(self, name: str, image_path: str) -> list[np.ndarray]:
-        cache_key = _cache_key(image_path)
+    def _get_encoding(self, name: str, image_b64: str) -> list[np.ndarray]:
+        cache_key = _cache_key(image_b64)
         mem_key = f"{name}:{cache_key}"
 
         if mem_key in self._mem:
@@ -114,7 +117,7 @@ class FaceMatcher:
                 log.warning("Corrupt cache for '%s', recomputing: %s", name, e)
                 disk_path.unlink(missing_ok=True)
 
-        encs = _compute_encoding(name, image_path)
+        encs = _compute_encoding(name, image_b64)
         if encs:
             with open(disk_path, "wb") as f:
                 pickle.dump(encs, f)
@@ -126,21 +129,17 @@ class FaceMatcher:
 # Module-level helpers
 # ------------------------------------------------------------------
 
-def _compute_encoding(name: str, image_path: str) -> list[np.ndarray]:
-    path = Path(image_path)
-    if not path.exists():
-        log.warning("Image not found for '%s': %s", name, image_path)
-        return []
-
+def _compute_encoding(name: str, image_b64: str) -> list[np.ndarray]:
     try:
-        image = face_recognition.load_image_file(str(path))
+        img_bytes = base64.b64decode(image_b64)
+        image = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
     except Exception as e:
-        log.error("Failed to load image for '%s' at %s: %s", name, path, e)
+        log.error("Failed to decode image for '%s': %s", name, e)
         return []
 
     locations = face_recognition.face_locations(image, model="hog")
     if not locations:
-        log.warning("No faces detected in reference image for '%s' (%s)", name, path.name)
+        log.warning("No faces detected in reference image for '%s'", name)
         return []
 
     if len(locations) > 1:
@@ -164,15 +163,6 @@ def _dist_to_confidence(distance: float) -> float:
     return max(0.0, 1.0 - (distance / 0.6))
 
 
-def _cache_key(image_path: str) -> str:
-    """
-    Cache key = hash of (path + file mtime).
-    If the actor image is updated in Jellyfin, the encoding is recomputed.
-    """
-    path = Path(image_path)
-    try:
-        mtime = str(path.stat().st_mtime)
-    except OSError:
-        mtime = "0"
-    raw = f"{image_path}:{mtime}"
-    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+def _cache_key(image_b64: str) -> str:
+    """Cache key = SHA1 of the image bytes. Automatically invalidates if the image changes."""
+    return hashlib.sha1(image_b64.encode()).hexdigest()[:16]

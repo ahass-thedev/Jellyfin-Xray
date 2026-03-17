@@ -37,7 +37,7 @@ _matcher: FaceMatcher | None = None
 
 class ActorRequest(BaseModel):
     name: str
-    image_path: str
+    image_b64: str
 
 
 class MatchRequest(BaseModel):
@@ -78,7 +78,7 @@ def match(req: MatchRequest):
         log.warning("Failed to decode frame: %s", e)
         return MatchResponse(matches=[])
 
-    actors = {a.name: a.image_path for a in req.actors}
+    actors = {a.name: a.image_b64 for a in req.actors}
     matches = _matcher.match(
         frame=frame_array,
         actors=actors,
