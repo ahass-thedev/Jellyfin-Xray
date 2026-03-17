@@ -36,11 +36,12 @@ def _get_face_app():
         from insightface.app import FaceAnalysis
         _face_app = FaceAnalysis(
             name="buffalo_l",
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            allowed_modules=["detection", "recognition"],
+            providers=["DmlExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         # ctx_id=0 → first GPU; det_size=(640,640) catches small faces well.
         _face_app.prepare(ctx_id=0, det_size=(640, 640))
-        log.info("InsightFace buffalo_l loaded (CUDA if available, else CPU fallback)")
+        log.info("InsightFace buffalo_l loaded (DirectML/CUDA if available, else CPU fallback)")
     return _face_app
 
 
@@ -189,8 +190,12 @@ def _compute_encoding(name: str, image_b64: str) -> list[np.ndarray]:
 
 
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity. InsightFace ArcFace embeddings are already L2-normalised."""
-    return float(np.dot(a, b))
+    """Cosine similarity, normalising vectors explicitly to handle providers that skip L2 norm."""
+    na = np.linalg.norm(a)
+    nb = np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
 
 
 def _sim_to_confidence(similarity: float, min_sim: float) -> float:
