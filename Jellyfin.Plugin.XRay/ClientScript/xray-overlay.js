@@ -215,13 +215,20 @@
     try {
       const resp = await fetch(`/XRay/query?itemId=${itemId}&t=${t}`);
       if (resp.status === 404) {
-        fetch(`/XRay/analyze/${itemId}`, { method: 'POST' }).catch(() => {});
+        triggerAnalysis(itemId);
+        renderStatus('Analyzing… actor data will appear shortly.');
         return;
       }
       if (!resp.ok) return;
       const data = await resp.json();
       renderActors(data.actors || []);
     } catch (_) { /* network / sidecar down */ }
+  }
+
+  function triggerAnalysis(itemId) {
+    const token = window.ApiClient?._accessToken ?? '';
+    const auth  = token ? `?api_key=${token}` : '';
+    fetch(`/XRay/analyze/${itemId}${auth}`, { method: 'POST' }).catch(() => {});
   }
 
   // ------------------------------------------------------------------
@@ -245,6 +252,15 @@
   // ------------------------------------------------------------------
   // Rendering
   // ------------------------------------------------------------------
+
+  function renderStatus(msg) {
+    const key = '__status__' + msg;
+    if (key === lastKey) return;
+    lastKey = key;
+    const cards = document.getElementById('xray-cards');
+    if (!cards) return;
+    cards.innerHTML = `<div class="xray-status">${esc(msg)}</div>`;
+  }
 
   function renderActors(actors) {
     const max     = window._xrayMaxActors || 4;
@@ -419,6 +435,13 @@
         overflow: hidden;
         text-overflow: ellipsis;
         line-height: 1.3;
+      }
+
+      .xray-status {
+        padding: 10px 14px;
+        font-size: 11px;
+        color: rgba(255,255,255,0.45);
+        line-height: 1.4;
       }
     `;
     document.head.appendChild(s);
