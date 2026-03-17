@@ -46,10 +46,13 @@ public class XRayInitializer : Microsoft.Extensions.Hosting.IHostedService
         var plugin = Plugin.Instance;
         if (plugin is null) return Task.CompletedTask;
 
-        plugin.Store = new XRayStore(_loggerFactory.CreateLogger<XRayStore>());
-        plugin.SidecarHttpClient = new SidecarClient(_loggerFactory.CreateLogger<SidecarClient>());
-        plugin.Metadata = new MetadataService(_libraryManager, _loggerFactory.CreateLogger<MetadataService>());
-        plugin.XRay = new XRayService(plugin.Metadata, plugin.SidecarHttpClient, plugin.Store, _loggerFactory.CreateLogger<XRayService>());
+        var fileLogger = new XRayFileLogger(plugin.DataPath);
+        plugin.FileLogger = fileLogger;
+
+        plugin.Store = new XRayStore(new TeeLogger<XRayStore>(_loggerFactory.CreateLogger<XRayStore>(), fileLogger));
+        plugin.SidecarHttpClient = new SidecarClient(new TeeLogger<SidecarClient>(_loggerFactory.CreateLogger<SidecarClient>(), fileLogger));
+        plugin.Metadata = new MetadataService(_libraryManager, _appPaths, new TeeLogger<MetadataService>(_loggerFactory.CreateLogger<MetadataService>(), fileLogger));
+        plugin.XRay = new XRayService(plugin.Metadata, plugin.SidecarHttpClient, plugin.Store, new TeeLogger<XRayService>(_loggerFactory.CreateLogger<XRayService>(), fileLogger));
 
         if (plugin.Configuration.AutoStartSidecar)
         {

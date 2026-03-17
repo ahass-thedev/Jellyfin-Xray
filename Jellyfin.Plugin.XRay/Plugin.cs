@@ -37,6 +37,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public SidecarClient? SidecarHttpClient { get; internal set; }
     public MetadataService? Metadata { get; internal set; }
     public XRayService? XRay { get; internal set; }
+    public XRayFileLogger? FileLogger { get; internal set; }
 
     public IEnumerable<PluginPageInfo> GetPages() =>
         new[]

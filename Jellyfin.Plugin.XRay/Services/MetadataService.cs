@@ -1,4 +1,5 @@
 using Jellyfin.Data.Enums;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -14,13 +15,16 @@ namespace Jellyfin.Plugin.XRay.Services;
 public class MetadataService
 {
     private readonly ILibraryManager _libraryManager;
+    private readonly IApplicationPaths _appPaths;
     private readonly ILogger<MetadataService> _logger;
 
     public MetadataService(
         ILibraryManager libraryManager,
+        IApplicationPaths appPaths,
         ILogger<MetadataService> logger)
     {
         _libraryManager = libraryManager;
+        _appPaths = appPaths;
         _logger = logger;
     }
 
@@ -64,6 +68,8 @@ public class MetadataService
 
     /// <summary>
     /// Returns the trickplay directory for a media item, if one exists.
+    /// Checks both the server data path (Jellyfin default) and the media-adjacent
+    /// path (used when "Store trickplay images next to media" is enabled).
     /// Picks the highest available width tier for best face detection accuracy.
     /// </summary>
     public string? GetTrickplayDirectory(Guid itemId)
@@ -72,35 +78,47 @@ public class MetadataService
         if (item is null)
             return null;
 
-        var mediaPath = item.Path;
-        if (string.IsNullOrEmpty(mediaPath))
-            return null;
+        var idN = itemId.ToString("N");
 
-        var mediaDir = Path.GetDirectoryName(mediaPath);
-        if (mediaDir is null)
-            return null;
-
-        var trickplayRoot = Path.Combine(mediaDir, ".trickplay", itemId.ToString("N"));
-
-        if (!Directory.Exists(trickplayRoot))
+        // Candidate roots: data-path first (Jellyfin default), then media-adjacent
+        var candidates = new List<string>
         {
-            _logger.LogDebug("No trickplay directory for {ItemId} at {Path}", itemId, trickplayRoot);
-            return null;
+            Path.Combine(_appPaths.DataPath, "trickplay", idN),
+        };
+
+        var mediaPath = item.Path;
+        if (!string.IsNullOrEmpty(mediaPath))
+        {
+            var mediaDir = Path.GetDirectoryName(mediaPath);
+            if (mediaDir is not null)
+                candidates.Add(Path.Combine(mediaDir, ".trickplay", idN));
         }
 
-        var widthDirs = Directory
-            .EnumerateDirectories(trickplayRoot)
-            .Select(d => (path: d, width: int.TryParse(Path.GetFileName(d), out var w) ? w : 0))
-            .Where(x => x.width > 0)
-            .OrderByDescending(x => x.width)
-            .ToList();
+        foreach (var root in candidates)
+        {
+            if (!Directory.Exists(root))
+            {
+                _logger.LogDebug("No trickplay at {Path}", root);
+                continue;
+            }
 
-        if (widthDirs.Count == 0)
-            return null;
+            var widthDirs = Directory
+                .EnumerateDirectories(root)
+                .Select(d => (path: d, width: int.TryParse(Path.GetFileName(d), out var w) ? w : 0))
+                .Where(x => x.width > 0)
+                .OrderByDescending(x => x.width)
+                .ToList();
 
-        var best = widthDirs[0].path;
-        _logger.LogDebug("Using trickplay dir {Path} for {ItemId}", best, itemId);
-        return best;
+            if (widthDirs.Count == 0)
+                continue;
+
+            var best = widthDirs[0].path;
+            _logger.LogDebug("Using trickplay dir {Path} for {ItemId}", best, itemId);
+            return best;
+        }
+
+        _logger.LogDebug("No trickplay found for {ItemId} in any candidate path", itemId);
+        return null;
     }
 
     /// <summary>
