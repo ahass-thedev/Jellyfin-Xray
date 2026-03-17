@@ -1,5 +1,5 @@
 using Jellyfin.Plugin.XRay.Services;
-using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Jellyfin.Plugin.XRay;
