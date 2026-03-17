@@ -14,7 +14,16 @@ public class XRayController : ControllerBase
     [HttpGet("resources")]
     [AllowAnonymous]
     public ActionResult<IEnumerable<string>> ListResources()
-        => Ok(Plugin.Instance?.GetEmbeddedResourceNames() ?? Array.Empty<string>());
+    {
+        var names = System.Reflection.Assembly
+            .GetExecutingAssembly()
+            .GetManifestResourceNames();
+        return Ok(new {
+            resources = names,
+            pluginInstanceIsNull = Plugin.Instance is null,
+            assemblyName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+        });
+    }
 
     [HttpGet("query")]
     [AllowAnonymous]
