@@ -47,10 +47,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Set to false if you manage the sidecar externally (e.g. systemd service).
     /// </summary>
     public bool AutoStartSidecar { get; set; } = true;
-
+}
+// append before closing brace — patch applied via sed below
     /// <summary>
-    /// Gets or sets the absolute path to the Python executable used to start the sidecar.
-    /// Leave empty to use the system default (python3).
+    /// Gets or sets the Docker socket path.
+    /// Leave blank for the platform default:
+    ///   Linux/Mac: unix:///var/run/docker.sock
+    ///   Windows:   npipe://./pipe/docker_engine
     /// </summary>
-    public string PythonPath { get; set; } = string.Empty;
+    public string DockerSocketPath { get; set; } = string.Empty;
 }

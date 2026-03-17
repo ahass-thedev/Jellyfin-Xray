@@ -24,6 +24,11 @@
     <PackageReference Include="Jellyfin.Controller" Version="10.11.6" CopyLocalLockFileAssemblies="false" />
   </ItemGroup>
 
+  <!-- Docker.DotNet for managing the sidecar container -->
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
+  </ItemGroup>
+
   <!-- ImageSharp for trickplay sprite splitting -->
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" CopyLocalLockFileAssemblies="true" />
