@@ -42,7 +42,6 @@ public class MetadataService
 
         var people = _libraryManager.GetPeople(item);
 
-        // In Jellyfin 10.9+ PersonInfo.Type is PersonKind enum, not a string
         var actors = people
             .Where(p => p.Type == PersonKind.Actor)
             .OrderBy(p => p.SortOrder ?? int.MaxValue)
@@ -67,56 +66,53 @@ public class MetadataService
     }
 
     /// <summary>
-    /// Returns the trickplay directory for a media item, if one exists.
-    /// Checks both the server data path (Jellyfin default) and the media-adjacent
-    /// path (used when "Store trickplay images next to media" is enabled).
+    /// Returns trickplay info for a media item, or null if none exists.
+    /// Jellyfin stores trickplay as: {mediaFilenameWithoutExt}.trickplay/{width} - {cols}x{rows}/
     /// Picks the highest available width tier for best face detection accuracy.
     /// </summary>
-    public string? GetTrickplayDirectory(Guid itemId)
+    public TrickplayInfo? GetTrickplayInfo(Guid itemId)
     {
         var item = _libraryManager.GetItemById(itemId);
-        if (item is null)
+        if (item is null || string.IsNullOrEmpty(item.Path))
             return null;
 
-        var idN = itemId.ToString("N");
+        var mediaDir = Path.GetDirectoryName(item.Path);
+        var mediaName = Path.GetFileNameWithoutExtension(item.Path);
+        if (mediaDir is null || mediaName is null)
+            return null;
 
-        // Candidate roots: data-path first (Jellyfin default), then media-adjacent
-        var candidates = new List<string>
-        {
-            Path.Combine(_appPaths.DataPath, "trickplay", idN),
-        };
+        // Jellyfin trickplay: "{mediaName}.trickplay/{width} - {cols}x{rows}/"
+        var trickplayRoot = Path.Combine(mediaDir, mediaName + ".trickplay");
 
-        var mediaPath = item.Path;
-        if (!string.IsNullOrEmpty(mediaPath))
+        if (!Directory.Exists(trickplayRoot))
         {
-            var mediaDir = Path.GetDirectoryName(mediaPath);
-            if (mediaDir is not null)
-                candidates.Add(Path.Combine(mediaDir, ".trickplay", idN));
+            _logger.LogWarning(
+                "No trickplay for {ItemId} — expected at {Path}",
+                itemId, trickplayRoot);
+            return null;
         }
 
-        foreach (var root in candidates)
+        TrickplayInfo? best = null;
+        foreach (var dir in Directory.EnumerateDirectories(trickplayRoot))
         {
-            if (!Directory.Exists(root))
-                continue;
-
-            var widthDirs = Directory
-                .EnumerateDirectories(root)
-                .Select(d => (path: d, width: int.TryParse(Path.GetFileName(d), out var w) ? w : 0))
-                .Where(x => x.width > 0)
-                .OrderByDescending(x => x.width)
-                .ToList();
-
-            if (widthDirs.Count == 0)
-                continue;
-
-            var best = widthDirs[0].path;
-            _logger.LogInformation("Using trickplay dir {Path} for {ItemId}", best, itemId);
-            return best;
+            var dirName = Path.GetFileName(dir);
+            if (TryParseTrickplayDirName(dirName, out var width, out var cols, out var rows))
+            {
+                if (best is null || width > best.Width)
+                    best = new TrickplayInfo(dir, width, cols, rows);
+            }
         }
 
-        _logger.LogWarning("No trickplay found for {ItemId}. DataPath={DataPath} Checked: {Paths}",
-            itemId, _appPaths.DataPath, string.Join(", ", candidates));
-        return null;
+        if (best is null)
+        {
+            _logger.LogWarning("No valid trickplay subdirectory in {Path}", trickplayRoot);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Using trickplay {Dir} ({Width}px, {Cols}x{Rows}) for {ItemId}",
+            best.Directory, best.Width, best.Cols, best.Rows, itemId);
+        return best;
     }
 
     /// <summary>
@@ -124,7 +120,6 @@ public class MetadataService
     /// </summary>
     public IReadOnlyList<Guid> GetAllAnalysableItemIds()
     {
-        // BaseItemKind is in MediaBrowser.Model.Querying (Jellyfin 10.9)
         var query = new InternalItemsQuery
         {
             IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode },
@@ -134,6 +129,25 @@ public class MetadataService
 
         var result = _libraryManager.GetItemList(query);
         return result.Select(i => i.Id).ToList();
+    }
+
+    /// <summary>
+    /// Parses a trickplay subdirectory name in the format "{width} - {cols}x{rows}".
+    /// Example: "320 - 10x10" → width=320, cols=10, rows=10.
+    /// </summary>
+    private static bool TryParseTrickplayDirName(string name, out int width, out int cols, out int rows)
+    {
+        width = cols = rows = 0;
+        var dashIdx = name.IndexOf(" - ", StringComparison.Ordinal);
+        if (dashIdx < 0 || !int.TryParse(name[..dashIdx], out width))
+            return false;
+
+        var grid = name[(dashIdx + 3)..]; // "10x10"
+        var xIdx = grid.IndexOf('x');
+        if (xIdx < 0)
+            return false;
+
+        return int.TryParse(grid[..xIdx], out cols) && int.TryParse(grid[(xIdx + 1)..], out rows);
     }
 
     private static string? GetPersonImagePath(Person? person)
@@ -148,6 +162,9 @@ public class MetadataService
         return null;
     }
 }
+
+/// <summary>Trickplay sprite sheet metadata for one width tier.</summary>
+public record TrickplayInfo(string Directory, int Width, int Cols, int Rows);
 
 /// <summary>Lightweight DTO carrying the metadata the sidecar needs per actor.</summary>
 public record ActorInfo(

@@ -8,8 +8,8 @@ namespace Jellyfin.Plugin.XRay.Services;
 /// <summary>
 /// Orchestrates the full X-Ray analysis pipeline for a single media item:
 ///   1. Get cast (MetadataService)
-///   2. Get trickplay image directory (MetadataService)
-///   3. Split each trickplay sprite into frames
+///   2. Get trickplay sprite info (MetadataService)
+///   3. Split each trickplay sprite sheet into individual frames
 ///   4. Send each frame to the sidecar for face matching (SidecarClient)
 ///   5. Persist the results (XRayStore)
 /// </summary>
@@ -19,10 +19,6 @@ public class XRayService
     private readonly SidecarClient _sidecar;
     private readonly XRayStore _store;
     private readonly ILogger<XRayService> _logger;
-
-    // Trickplay sprites are typically 320×180 tiles
-    private const int TileWidth = 320;
-    private const int TileHeight = 180;
 
     public XRayService(
         MetadataService metadata,
@@ -61,37 +57,41 @@ public class XRayService
             return;
         }
 
-        var trickplayDir = _metadata.GetTrickplayDirectory(itemId);
-        if (trickplayDir is null)
+        var trickplay = _metadata.GetTrickplayInfo(itemId);
+        if (trickplay is null)
         {
             _logger.LogWarning("No trickplay data for {ItemId} — skipping", itemId);
             return;
         }
 
         var spriteFiles = Directory
-            .EnumerateFiles(trickplayDir, "*.jpg")
+            .EnumerateFiles(trickplay.Directory, "*.jpg")
             .Where(f => int.TryParse(Path.GetFileNameWithoutExtension(f), out _))
             .OrderBy(f => int.Parse(Path.GetFileNameWithoutExtension(f)))
             .ToList();
 
         if (spriteFiles.Count == 0)
         {
-            _logger.LogWarning("Trickplay directory {Dir} has no .jpg files", trickplayDir);
+            _logger.LogWarning("Trickplay directory {Dir} has no .jpg files", trickplay.Directory);
             return;
         }
 
         var interval = Plugin.Instance?.Configuration.TrickplayIntervalSeconds ?? 10;
+        var tilesPerSprite = trickplay.Cols * trickplay.Rows;
         var xrayData = new Dictionary<string, List<string>>();
 
-        foreach (var spritePath in spriteFiles)
+        for (int i = 0; i < spriteFiles.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            await ProcessSpriteAsync(spritePath, cast, interval, xrayData, ct)
+            // Sprite files are numbered sequentially (0.jpg, 1.jpg, …).
+            // Each sprite covers (cols * rows) time slots of `interval` seconds.
+            int baseSecond = i * tilesPerSprite * interval;
+            await ProcessSpriteAsync(spriteFiles[i], trickplay, baseSecond, cast, interval, xrayData, ct)
                 .ConfigureAwait(false);
         }
 
         await _store.SaveAsync(itemId, xrayData, ct).ConfigureAwait(false);
-        _logger.LogInformation("Analysis complete for {ItemId}: {Count} entries", itemId, xrayData.Count);
+        _logger.LogInformation("Analysis complete for {ItemId}: {Count} timestamp entries", itemId, xrayData.Count);
     }
 
     // ------------------------------------------------------------------
@@ -100,17 +100,17 @@ public class XRayService
 
     private async Task ProcessSpriteAsync(
         string spritePath,
+        TrickplayInfo trickplay,
+        int baseSecond,
         IReadOnlyList<ActorInfo> cast,
         int interval,
         Dictionary<string, List<string>> xrayData,
         CancellationToken ct)
     {
-        int baseSecond = int.Parse(Path.GetFileNameWithoutExtension(spritePath));
-
         List<(int timestamp, byte[] jpegBytes)> frames;
         try
         {
-            frames = SplitSprite(spritePath, baseSecond, interval);
+            frames = SplitSprite(spritePath, trickplay.Cols, trickplay.Rows, baseSecond, interval);
         }
         catch (Exception ex)
         {
@@ -133,15 +133,16 @@ public class XRayService
 
     /// <summary>
     /// Splits a trickplay sprite sheet into individual JPEG frames.
+    /// Tile dimensions are computed from the image size and the grid layout.
     /// Returns a list of (timestamp in seconds, JPEG bytes) tuples.
     /// </summary>
     private static List<(int timestamp, byte[] jpeg)> SplitSprite(
-        string spritePath, int baseSecond, int interval)
+        string spritePath, int cols, int rows, int baseSecond, int interval)
     {
         using var sprite = Image.Load<Rgb24>(spritePath);
 
-        int cols = sprite.Width / TileWidth;
-        int rows = sprite.Height / TileHeight;
+        int tileWidth = sprite.Width / cols;
+        int tileHeight = sprite.Height / rows;
 
         var frames = new List<(int, byte[])>(cols * rows);
 
@@ -153,10 +154,10 @@ public class XRayService
                 int timestamp = baseSecond + (frameIndex * interval);
 
                 var rect = new Rectangle(
-                    col * TileWidth,
-                    row * TileHeight,
-                    Math.Min(TileWidth, sprite.Width - col * TileWidth),
-                    Math.Min(TileHeight, sprite.Height - row * TileHeight));
+                    col * tileWidth,
+                    row * tileHeight,
+                    Math.Min(tileWidth, sprite.Width - col * tileWidth),
+                    Math.Min(tileHeight, sprite.Height - row * tileHeight));
 
                 using var tile = sprite.Clone(ctx => ctx.Crop(rect));
                 using var ms = new MemoryStream();
