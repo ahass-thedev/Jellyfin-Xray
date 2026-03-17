@@ -46,6 +46,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = Name,
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
+            },
+            new PluginPageInfo
+            {
+                Name = "XRayOverlayInjector",
+                EmbeddedResourcePath = $"{GetType().Namespace}.ClientScript.overlay-injector.html",
+                EnableInMainUI = true,
             }
         };
 

@@ -16,6 +16,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Configuration/configPage.html" />
     <EmbeddedResource Include="ClientScript/xray-overlay.js" />
+    <EmbeddedResource Include="ClientScript/overlay-injector.html" />
   </ItemGroup>
 
   <!-- Jellyfin references — correct package names on nuget.org, CopyLocal false so not bundled -->

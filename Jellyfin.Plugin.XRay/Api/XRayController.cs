@@ -98,8 +98,19 @@ public class XRayController : ControllerBase
             return Ok(new SidecarHealthResponse(url, false));
         }
     }
+
+    [HttpGet("client-config")]
+    [AllowAnonymous]
+    public ActionResult<ClientConfigResponse> ClientConfig()
+    {
+        var cfg = Plugin.Instance?.Configuration;
+        return Ok(new ClientConfigResponse(
+            cfg?.OverlayEnabled ?? true,
+            cfg?.MaxActorsDisplayed ?? 4));
+    }
 }
 
 public record XRayQueryResponse(Guid ItemId, int T, IReadOnlyList<string> Actors);
 public record XRayStatusResponse(Guid ItemId, bool Ready);
 public record SidecarHealthResponse(string Url, bool Reachable);
+public record ClientConfigResponse(bool OverlayEnabled, int MaxActors);
