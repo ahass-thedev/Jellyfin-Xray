@@ -31,9 +31,9 @@
         </div>
 
         <div class="inputContainer">
-          <label class="inputLabel inputLabelUnfocused" for="PythonPath">Python executable path (optional)</label>
-          <input id="PythonPath" name="PythonPath" type="text" class="emby-input" />
-          <div class="fieldDescription">Leave blank to use python3 from PATH. E.g. /usr/bin/python3</div>
+          <label class="inputLabel inputLabelUnfocused" for="DockerSocketPath">Docker socket path (optional)</label>
+          <input id="DockerSocketPath" name="DockerSocketPath" type="text" class="emby-input" />
+          <div class="fieldDescription">Leave blank for platform default. Linux: unix:///var/run/docker.sock</div>
         </div>
 
         <!-- Face matching -->
@@ -94,13 +94,13 @@
 
   <script type="text/javascript">
     var XRayConfig = {
-      pluginId: "0344d9cc-bd3d-4f28-b6a0-314671628f84",
+      pluginId: "3f4a2b1c-8e7d-4f6a-9b5c-2d1e0f3a4b5c",
 
       load: function(page) {
         ApiClient.getPluginConfiguration(XRayConfig.pluginId).then(function(config) {
           page.querySelector("#SidecarUrl").value = config.SidecarUrl || "http://localhost:8756";
           page.querySelector("#AutoStartSidecar").checked = config.AutoStartSidecar !== false;
-          page.querySelector("#PythonPath").value = config.PythonPath || "";
+          page.querySelector("#DockerSocketPath").value = config.DockerSocketPath || "";
           page.querySelector("#FaceMatchTolerance").value = config.FaceMatchTolerance ?? 0.55;
           page.querySelector("#FaceConfidenceThreshold").value = config.FaceConfidenceThreshold ?? 0.60;
           page.querySelector("#TrickplayIntervalSeconds").value = config.TrickplayIntervalSeconds ?? 10;
@@ -113,7 +113,7 @@
         ApiClient.getPluginConfiguration(XRayConfig.pluginId).then(function(config) {
           config.SidecarUrl = page.querySelector("#SidecarUrl").value;
           config.AutoStartSidecar = page.querySelector("#AutoStartSidecar").checked;
-          config.PythonPath = page.querySelector("#PythonPath").value;
+          config.DockerSocketPath = page.querySelector("#DockerSocketPath").value;
           config.FaceMatchTolerance = parseFloat(page.querySelector("#FaceMatchTolerance").value);
           config.FaceConfidenceThreshold = parseFloat(page.querySelector("#FaceConfidenceThreshold").value);
           config.TrickplayIntervalSeconds = parseInt(page.querySelector("#TrickplayIntervalSeconds").value);

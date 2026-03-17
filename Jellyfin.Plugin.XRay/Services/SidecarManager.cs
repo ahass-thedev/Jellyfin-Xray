@@ -1,4 +1,5 @@
-using System.Diagnostics;
+using Docker.DotNet;
+using Docker.DotNet.Models;
 using Jellyfin.Plugin.XRay.Configuration;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging;
@@ -6,147 +7,180 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.XRay.Services;
 
 /// <summary>
-/// Manages the lifecycle of the Python face recognition sidecar process.
-///
-/// The sidecar lives in {PluginDataPath}/sidecar/main.py.
-/// On first run (or after an update), we copy the bundled sidecar files there.
+/// Manages the lifecycle of the face recognition sidecar Docker container.
+/// Connects to the Docker socket, pulls the image if needed, and starts/stops
+/// the container alongside the plugin.
 /// </summary>
-public class SidecarManager
+public class SidecarManager : IDisposable
 {
-    private readonly IApplicationPaths _appPaths;
+    private const string ImageName = "ghcr.io/ahass-thedev/jellyfin-xray-sidecar";
+    private const string ImageTag = "latest";
+    private const string ContainerName = "jellyfin-xray-sidecar";
+    private const int SidecarPort = 8756;
+
     private readonly PluginConfiguration _config;
     private readonly ILogger _logger;
-    private Process? _process;
-
-    private string SidecarDir => Path.Combine(
-        _appPaths.DataPath, "xray-sidecar");
-
-    private string SidecarScript => Path.Combine(SidecarDir, "main.py");
+    private readonly string _cacheDir;
+    private DockerClient? _docker;
+    private string? _containerId;
+    private bool _disposed;
 
     public SidecarManager(
         IApplicationPaths appPaths,
         PluginConfiguration config,
         ILogger logger)
     {
-        _appPaths = appPaths;
         _config = config;
         _logger = logger;
+        _cacheDir = Path.Combine(appPaths.CachePath, "xray-encodings");
+        Directory.CreateDirectory(_cacheDir);
     }
-
-    // ------------------------------------------------------------------
-    // Lifecycle
-    // ------------------------------------------------------------------
 
     public void Start()
     {
-        if (!File.Exists(SidecarScript))
+        _ = Task.Run(async () =>
         {
-            _logger.LogWarning(
-                "Sidecar script not found at {Path}. " +
-                "Copy the sidecar/ folder from the plugin repo to {Dir} and run: pip install -r requirements.txt",
-                SidecarScript, SidecarDir);
-            return;
-        }
-
-        var python = string.IsNullOrWhiteSpace(_config.PythonPath)
-            ? FindPython()
-            : _config.PythonPath;
-
-        if (python is null)
-        {
-            _logger.LogError(
-                "Python executable not found. Set PythonPath in plugin config or ensure python3 is on PATH.");
-            return;
-        }
-
-        var encodingCacheDir = Plugin.Instance?.EncodingCachePath
-            ?? Path.Combine(_appPaths.CachePath, "xray-encodings");
-        Directory.CreateDirectory(encodingCacheDir);
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = python,
-            Arguments = $"\"{SidecarScript}\" --cache-dir \"{encodingCacheDir}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-
-        _logger.LogInformation("Starting X-Ray sidecar: {Python} {Args}", python, psi.Arguments);
-
-        _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        _process.OutputDataReceived += (_, e) =>
-        {
-            if (!string.IsNullOrEmpty(e.Data))
-                _logger.LogDebug("[sidecar] {Line}", e.Data);
-        };
-        _process.ErrorDataReceived += (_, e) =>
-        {
-            if (!string.IsNullOrEmpty(e.Data))
-                _logger.LogWarning("[sidecar] {Line}", e.Data);
-        };
-        _process.Exited += (_, _) =>
-            _logger.LogWarning("X-Ray sidecar process exited unexpectedly");
-
-        _process.Start();
-        _process.BeginOutputReadLine();
-        _process.BeginErrorReadLine();
-
-        _logger.LogInformation("X-Ray sidecar started (PID {Pid})", _process.Id);
+            try { await StartAsync().ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to start X-Ray sidecar container. " +
+                    "Ensure Docker socket is mounted: -v /var/run/docker.sock:/var/run/docker.sock");
+            }
+        });
     }
 
     public void Stop()
     {
-        if (_process is null || _process.HasExited)
-            return;
-
-        _logger.LogInformation("Stopping X-Ray sidecar (PID {Pid})", _process.Id);
-        try
+        _ = Task.Run(async () =>
         {
-            _process.Kill(entireProcessTree: true);
-            _process.WaitForExit(3000);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error stopping sidecar process");
-        }
-        finally
-        {
-            _process.Dispose();
-            _process = null;
-        }
+            try { await StopAsync().ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Error stopping sidecar container"); }
+        });
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
-
-    private static string? FindPython()
+    private async Task StartAsync()
     {
-        foreach (var candidate in new[] { "python3", "python" })
+        _docker = CreateDockerClient();
+        await RemoveExistingContainerAsync().ConfigureAwait(false);
+        await EnsureImageAsync().ConfigureAwait(false);
+        _containerId = await CreateAndStartContainerAsync().ConfigureAwait(false);
+        _logger.LogInformation("X-Ray sidecar started (id={Id}) on port {Port}",
+            _containerId[..12], SidecarPort);
+    }
+
+    private async Task StopAsync()
+    {
+        if (_docker is null || string.IsNullOrEmpty(_containerId)) return;
+        _logger.LogInformation("Stopping X-Ray sidecar {Id}", _containerId[..12]);
+        try
         {
-            try
+            await _docker.Containers.StopContainerAsync(_containerId,
+                new ContainerStopParameters { WaitBeforeKillSeconds = 5 }).ConfigureAwait(false);
+            await _docker.Containers.RemoveContainerAsync(_containerId,
+                new ContainerRemoveParameters { Force = true }).ConfigureAwait(false);
+        }
+        catch (DockerContainerNotFoundException) { }
+        _containerId = null;
+    }
+
+    private async Task EnsureImageAsync()
+    {
+        var fullImage = $"{ImageName}:{ImageTag}";
+        var images = await _docker!.Images.ListImagesAsync(new ImagesListParameters
+        {
+            Filters = new Dictionary<string, IDictionary<string, bool>>
             {
-                var probe = Process.Start(new ProcessStartInfo
-                {
-                    FileName = candidate,
-                    Arguments = "--version",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                });
-                probe?.WaitForExit(2000);
-                if (probe?.ExitCode == 0)
-                    return candidate;
+                ["reference"] = new Dictionary<string, bool> { [fullImage] = true }
             }
-            catch
-            {
-                // not found, try next
-            }
+        }).ConfigureAwait(false);
+
+        if (images.Count > 0)
+        {
+            _logger.LogDebug("Sidecar image {Image} already present", fullImage);
+            return;
         }
 
-        return null;
+        _logger.LogInformation("Pulling sidecar image {Image} — first run may take a few minutes", fullImage);
+        await _docker.Images.CreateImageAsync(
+            new ImagesCreateParameters { FromImage = ImageName, Tag = ImageTag },
+            authConfig: null,
+            new Progress<JSONMessage>(msg =>
+            {
+                if (!string.IsNullOrEmpty(msg.Status))
+                    _logger.LogDebug("[docker pull] {Status}", msg.Status);
+            })).ConfigureAwait(false);
+        _logger.LogInformation("Sidecar image pulled successfully");
+    }
+
+    private async Task<string> CreateAndStartContainerAsync()
+    {
+        var response = await _docker!.Containers.CreateContainerAsync(new CreateContainerParameters
+        {
+            Image = $"{ImageName}:{ImageTag}",
+            Name = ContainerName,
+            ExposedPorts = new Dictionary<string, EmptyStruct>
+            {
+                [$"{SidecarPort}/tcp"] = default
+            },
+            HostConfig = new HostConfig
+            {
+                PortBindings = new Dictionary<string, IList<PortBinding>>
+                {
+                    [$"{SidecarPort}/tcp"] = new List<PortBinding>
+                    {
+                        new PortBinding { HostIP = "127.0.0.1", HostPort = SidecarPort.ToString() }
+                    }
+                },
+                Binds = new List<string> { $"{_cacheDir}:/cache" },
+                RestartPolicy = new RestartPolicy { Name = RestartPolicyKind.No },
+                NetworkMode = "bridge",
+            },
+        }).ConfigureAwait(false);
+
+        await _docker.Containers.StartContainerAsync(response.ID, new ContainerStartParameters())
+            .ConfigureAwait(false);
+        return response.ID;
+    }
+
+    private async Task RemoveExistingContainerAsync()
+    {
+        try
+        {
+            var containers = await _docker!.Containers.ListContainersAsync(
+                new ContainersListParameters { All = true }).ConfigureAwait(false);
+            var existing = containers.FirstOrDefault(c =>
+                c.Names.Any(n => n.TrimStart('/') == ContainerName));
+            if (existing is null) return;
+            await _docker.Containers.StopContainerAsync(existing.ID,
+                new ContainerStopParameters { WaitBeforeKillSeconds = 3 }).ConfigureAwait(false);
+            await _docker.Containers.RemoveContainerAsync(existing.ID,
+                new ContainerRemoveParameters { Force = true }).ConfigureAwait(false);
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Could not remove existing sidecar container"); }
+    }
+
+    private DockerClient CreateDockerClient()
+    {
+        var socketPath = _config.DockerSocketPath;
+        if (string.IsNullOrWhiteSpace(socketPath))
+            socketPath = OperatingSystem.IsWindows()
+                ? "npipe://./pipe/docker_engine"
+                : "unix:///var/run/docker.sock";
+        _logger.LogDebug("Connecting to Docker at {Socket}", socketPath);
+        return new DockerClientConfiguration(new Uri(socketPath)).CreateClient();
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        if (disposing) { Stop(); _docker?.Dispose(); }
+        _disposed = true;
     }
 }
