@@ -84,18 +84,24 @@ jobs:
              }' manifest.json > manifest.tmp.json
 
           mv manifest.tmp.json manifest.json
+          cp manifest.json /tmp/manifest_updated.json
           echo "Updated manifest.json:"
           cat manifest.json
 
+      - name: Checkout main for manifest commit
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Commit updated manifest
         run: |
+          cp /tmp/manifest_updated.json manifest.json
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git rebase origin/main
           git add manifest.json
           git diff --staged --quiet || git commit -m "chore: update manifest for v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main
+          git push origin main
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
