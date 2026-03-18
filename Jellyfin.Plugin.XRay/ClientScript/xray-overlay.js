@@ -221,8 +221,9 @@
       }
       if (!resp.ok) { console.warn('[X-Ray] query failed', resp.status); return; }
       const data = await resp.json();
-      console.log('[X-Ray] query t=' + t + ' actors=' + JSON.stringify(data.actors));
-      renderActors(data.actors || []);
+      const actors = data.actors ?? data.Actors ?? [];
+      console.log('[X-Ray] query t=' + t + ' actors=' + JSON.stringify(actors));
+      renderActors(actors);
     } catch (e) { console.warn('[X-Ray] tick error', e); }
   }
 
