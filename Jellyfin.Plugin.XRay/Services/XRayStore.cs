@@ -64,8 +64,9 @@ public class XRayStore
 
         int closest = candidates.Max();
 
-        // If the nearest entry is more than 2 intervals old, don't show stale data
-        if (seconds - closest > interval * 2)
+        // Keep showing actors for up to 9 intervals after the last detection.
+        // This covers dark/silhouetted scenes where face detection fails for 60-90 seconds.
+        if (seconds - closest > interval * 9)
             return Array.Empty<string>();
 
         return data.TryGetValue(closest.ToString(), out var actors)
