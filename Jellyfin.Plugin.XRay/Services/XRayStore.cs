@@ -53,7 +53,6 @@ public class XRayStore
             return Array.Empty<string>();
 
         // Find the largest recorded timestamp ≤ seconds
-        int interval = Plugin.Instance?.Configuration.TrickplayIntervalSeconds ?? 10;
         var candidates = data.Keys
             .Select(k => int.TryParse(k, out var v) ? v : -1)
             .Where(t => t >= 0 && t <= seconds)
@@ -62,12 +61,9 @@ public class XRayStore
         if (candidates.Count == 0)
             return Array.Empty<string>();
 
+        // Always show the most recently detected actors — no stale timeout.
+        // Actors stay visible until a new detection replaces them.
         int closest = candidates.Max();
-
-        // Keep showing actors for up to 9 intervals after the last detection.
-        // This covers dark/silhouetted scenes where face detection fails for 60-90 seconds.
-        if (seconds - closest > interval * 9)
-            return Array.Empty<string>();
 
         return data.TryGetValue(closest.ToString(), out var actors)
             ? actors
