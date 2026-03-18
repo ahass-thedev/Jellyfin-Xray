@@ -235,18 +235,28 @@
   // Cast metadata
   // ------------------------------------------------------------------
 
+  function serverBase() {
+    // serverAddress() may be empty in Jellyfin 10.11 — fall back to origin.
+    try {
+      const s = window.ApiClient?.serverAddress?.() ?? '';
+      return s || window.location.origin;
+    } catch (_) {
+      return window.location.origin;
+    }
+  }
+
   async function prefetchCast(itemId) {
     try {
-      const server = window.ApiClient?.serverAddress() ?? '';
+      const server = serverBase();
       const token  = window.ApiClient?._accessToken ?? '';
-      if (!server) return;
       const r = await fetch(`${server}/Items/${itemId}?Fields=People&api_key=${token}`);
-      if (!r.ok) return;
+      if (!r.ok) { console.warn('[X-Ray] prefetchCast failed', r.status); return; }
       const d = await r.json();
       (d.People || []).filter(p => p.Type === 'Actor').forEach(p => {
         castMeta[p.Name] = { role: p.Role || '', tag: p.PrimaryImageTag || '', id: p.Id || '' };
       });
-    } catch (_) {}
+      console.log('[X-Ray] cast loaded:', Object.keys(castMeta).length, 'actors');
+    } catch (e) { console.warn('[X-Ray] prefetchCast error', e); }
   }
 
   // ------------------------------------------------------------------
