@@ -248,10 +248,18 @@
   async function prefetchCast(itemId) {
     try {
       const server = serverBase();
-      const token  = window.ApiClient?._accessToken ?? '';
-      const r = await fetch(`${server}/Items/${itemId}?Fields=People&api_key=${token}`);
-      if (!r.ok) { console.warn('[X-Ray] prefetchCast failed', r.status); return; }
-      const d = await r.json();
+      const url    = `${server}/Items/${itemId}?Fields=People`;
+      let d;
+      // ApiClient.getJSON() injects the correct auth headers automatically.
+      // Fall back to raw fetch + api_key param if getJSON is unavailable.
+      if (window.ApiClient?.getJSON) {
+        d = await window.ApiClient.getJSON(url);
+      } else {
+        const token = window.ApiClient?._accessToken ?? '';
+        const r = await fetch(`${url}${token ? '&api_key=' + token : ''}`);
+        if (!r.ok) { console.warn('[X-Ray] prefetchCast failed', r.status); return; }
+        d = await r.json();
+      }
       (d.People || []).filter(p => p.Type === 'Actor').forEach(p => {
         castMeta[p.Name] = { role: p.Role || '', tag: p.PrimaryImageTag || '', id: p.Id || '' };
       });
@@ -285,7 +293,7 @@
 
     if (visible.length === 0) return;
 
-    const server = window.ApiClient?.serverAddress() ?? '';
+    const server = serverBase();
 
     visible.forEach((name, i) => {
       const meta = castMeta[name] || {};
