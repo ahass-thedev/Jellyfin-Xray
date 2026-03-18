@@ -219,10 +219,11 @@
         renderStatus('Analyzing… actor data will appear shortly.');
         return;
       }
-      if (!resp.ok) return;
+      if (!resp.ok) { console.warn('[X-Ray] query failed', resp.status); return; }
       const data = await resp.json();
+      console.log('[X-Ray] query t=' + t + ' actors=' + JSON.stringify(data.actors));
       renderActors(data.actors || []);
-    } catch (_) { /* network / sidecar down */ }
+    } catch (e) { console.warn('[X-Ray] tick error', e); }
   }
 
   function triggerAnalysis(itemId) {
