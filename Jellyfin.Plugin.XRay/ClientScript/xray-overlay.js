@@ -248,10 +248,13 @@
   async function prefetchCast(itemId) {
     try {
       const server = serverBase();
-      const url    = `${server}/Items/${itemId}?Fields=People`;
+      const userId = window.ApiClient?.currentUserId?.();
+      // /Users/{userId}/Items/{id} works for regular users; /Items/{id} needs admin.
+      const url = userId
+        ? `${server}/Users/${userId}/Items/${itemId}?Fields=People`
+        : `${server}/Items/${itemId}?Fields=People`;
       let d;
       // ApiClient.getJSON() injects the correct auth headers automatically.
-      // Fall back to raw fetch + api_key param if getJSON is unavailable.
       if (window.ApiClient?.getJSON) {
         d = await window.ApiClient.getJSON(url);
       } else {
