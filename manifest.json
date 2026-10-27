@@ -1,20 +1,19 @@
 [
   {
-    "guid": "5b3f1e9a-7c42-4d1b-9a60-2f8e4c7d3a11",
+    "guid": "3f4a2b1c-8e7d-4f6a-9b5c-2d1e0f3a4b5c",
     "name": "X-Ray",
-    "description": "Amazon-style X-Ray for movies and shows: who is in the current scene (faces, plus voices for cartoons and costumed characters) and the song that is playing.",
-    "overview": "Who is on screen, and what is playing.",
-    "owner": "achmadoo",
+    "description": "Shows actor information in the video player while watching, similar to Amazon Prime Video X-Ray. Uses facial recognition to identify which actors are on screen in real time.",
+    "overview": "X-Ray analyses your library's trickplay images to build a map of which actors appear at which timestamps. During playback, actor cards with photos and character names are displayed at the top of the screen.",
+    "owner": "jellyfin-plugin-xray",
     "category": "General",
-    "imageUrl": "",
     "versions": [
       {
         "version": "1.3.1.0",
-        "changelog": "No extra plugin needed: the player overlay now works out of the box.\n- File Transformation\u0027s middleware is bundled; if you already have File Transformation installed, X-Ray uses it instead.\n- Licence changes from MIT to GPL-3.0 (includes code from File Transformation by IAmParadox27).",
-        "targetAbi": "12.3.0.0",
-        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.3.1.0/xray_1.3.1.0.zip",
-        "checksum": "038cb04385d8358d13a424e3a1999248",
-        "timestamp": "2026-10-27T20:13:30Z"
+        "changelog": "See release notes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.3.1.0/jellyfin-plugin-xray_1.3.1.0.zip",
+        "checksum": "eb25e9aba644b52df8962d8389f1c1d0",
+        "timestamp": "2026-10-27T20:13:55Z"
       }
     ]
   }
