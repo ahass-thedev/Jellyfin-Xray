@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.5.1.0",
+        "changelog": "The sharing client sends a User-Agent (XRay-Jellyfin/\u003Cversion\u003E): Cloudflare in front of the sharing service blocks requests without one, so servers outside the home network could not reach it.\n\nSee merge request achmadoo/Jellyfin-Xray!18",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.5.1.0/xray_1.5.1.0.zip",
+        "checksum": "bf01c06e8ed6c4abd0b03f9039492383",
+        "timestamp": "2026-10-28T14:28:22Z"
+      },
+      {
         "version": "1.5.0.0",
         "changelog": "Analyse new titles when they are added; task progress moves during each title\n\nSee merge request achmadoo/Jellyfin-Xray!19",
         "targetAbi": "12.3.0.0",
