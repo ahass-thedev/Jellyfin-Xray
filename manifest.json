@@ -6,8 +6,16 @@
     "overview": "Who is on screen, and what is playing.",
     "owner": "achmadoo",
     "category": "General",
-    "imageUrl": "",
+    "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
+      {
+        "version": "1.6.0.0",
+        "changelog": "X-Ray 1.6.0.0: voices on the GPU, an X-Ray titles page, and a plugin image\n\nSee merge request achmadoo/Jellyfin-Xray!21",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.0.0/xray_1.6.0.0.zip",
+        "checksum": "b8f7166702ece2f0f15f777f4b5ef5cf",
+        "timestamp": "2026-10-28T16:49:42Z"
+      },
       {
         "version": "1.5.1.0",
         "changelog": "The sharing client sends a User-Agent (XRay-Jellyfin/\u003Cversion\u003E): Cloudflare in front of the sharing service blocks requests without one, so servers outside the home network could not reach it.\n\nSee merge request achmadoo/Jellyfin-Xray!18",
