@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
       {
+        "version": "1.6.2.0",
+        "changelog": "X-Ray 1.6.2.0: analyse several titles at once\n\nSee merge request achmadoo/Jellyfin-Xray!24",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.2.0/xray_1.6.2.0.zip",
+        "checksum": "5df0285a63528ac5e1c260ab60e08839",
+        "timestamp": "2026-10-29T23:46:20Z"
+      },
+      {
         "version": "1.6.1.0",
         "changelog": "X-Ray 1.6.1.0: people on screen are listed first\n\nSee merge request achmadoo/Jellyfin-Xray!23",
         "targetAbi": "12.3.0.0",
