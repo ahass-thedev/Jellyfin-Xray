@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
       {
+        "version": "1.6.1.0",
+        "changelog": "X-Ray 1.6.1.0: people on screen are listed first\n\nSee merge request achmadoo/Jellyfin-Xray!23",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.1.0/xray_1.6.1.0.zip",
+        "checksum": "9dbd19983eac7effff86919cd56f205c",
+        "timestamp": "2026-10-29T02:26:36Z"
+      },
+      {
         "version": "1.6.0.0",
         "changelog": "X-Ray 1.6.0.0: voices on the GPU, an X-Ray titles page, and a plugin image\n\nSee merge request achmadoo/Jellyfin-Xray!21",
         "targetAbi": "12.3.0.0",
