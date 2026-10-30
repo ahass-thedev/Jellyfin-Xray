@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
       {
+        "version": "1.6.2.1",
+        "changelog": "X-Ray 1.6.2.1: titles page counts every title being analysed\n\nSee merge request achmadoo/Jellyfin-Xray!25",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.2.1/xray_1.6.2.1.zip",
+        "checksum": "ede6e12246bf896091aa582cbc4c74dd",
+        "timestamp": "2026-10-30T00:19:35Z"
+      },
+      {
         "version": "1.6.2.0",
         "changelog": "X-Ray 1.6.2.0: analyse several titles at once\n\nSee merge request achmadoo/Jellyfin-Xray!24",
         "targetAbi": "12.3.0.0",
