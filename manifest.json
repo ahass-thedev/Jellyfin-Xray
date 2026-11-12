@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
       {
+        "version": "1.6.2.2",
+        "changelog": "X-Ray 1.6.2.2: stale library picks and broken IPv6 no longer stall onboarding\n\nSee merge request achmadoo/Jellyfin-Xray!28",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.2.2/xray_1.6.2.2.zip",
+        "checksum": "91f86da3053b3c6608af5628f3736554",
+        "timestamp": "2026-11-12T05:48:00Z"
+      },
+      {
         "version": "1.6.2.1",
         "changelog": "X-Ray 1.6.2.1: titles page counts every title being analysed\n\nSee merge request achmadoo/Jellyfin-Xray!25",
         "targetAbi": "12.3.0.0",
