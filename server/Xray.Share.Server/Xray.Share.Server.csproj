@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The X-Ray sharing service (docs/shared-data-design.md §6): ASP.NET Core minimal API over
+       PostgreSQL 17 + pgvector. Uses the plugin's Sharing library, so wire formats, title keys,
+       anchors and fits are the same code on both sides. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Xray.Share.Server</RootNamespace>
+    <AssemblyName>xray-share</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Jellyfin.Plugin.SceneXray.Sharing\Jellyfin.Plugin.SceneXray.Sharing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\Migrations\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Xray.Share.Server.Tests" />
+  </ItemGroup>
+
+</Project>

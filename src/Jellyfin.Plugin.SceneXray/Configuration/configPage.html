@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>X-Ray</title>
+</head>
+<body>
+<div id="SceneXrayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="SceneXrayConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">X-Ray</h2>
+                    <p class="fieldDescription">Shows who is in the current scene and what song is playing. Press <b>X</b> during playback, or use the panel on the left when the controls are visible.</p>
+                    <p class="fieldDescription"><span id="sxrSummary"></span> <a is="emby-linkbutton" class="button-link" href="#/configurationpage?name=SceneXrayTitles">See which titles have X-Ray</a></p>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">What to analyse</h3>
+                    <div id="sxrLibraries"></div>
+                    <div class="fieldDescription">None ticked means every movie and TV library. The <i>Analyse library</i> task (Scheduled Tasks &rarr; X-Ray) works through them overnight, newest first.</div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="SkipAnimation" /><span>Skip face analysis for animation</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">Titles (or series) in the Animation or Anime genre. Music is still identified.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="AnalyzeOnPlayback" /><span>Analyse a title as soon as someone starts watching it</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">An episode takes a few minutes, a film around 10&ndash;20. X-Ray appears in the player once it is done.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="AnalyzeNewMedia" /><span>Analyse new titles as soon as they are added</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">New movies and episodes are analysed once their metadata is in, ahead of the nightly backlog, so they have X-Ray before anyone watches them.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Faces</h3>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="ModelPack">Models</label>
+                        <select is="emby-select" id="ModelPack" class="emby-select-withcolor emby-select">
+                            <option value="Balanced">Balanced: full recognition accuracy, light detection (recommended)</option>
+                            <option value="Accurate">Accurate: also finds small faces in wide shots, about 3x slower</option>
+                            <option value="Fast">Fast: lowest CPU, weaker recognition</option>
+                        </select>
+                        <div class="fieldDescription">Downloaded once from the InsightFace project (research licence, personal use).</div>
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="InferenceDevice">Run face recognition on</label>
+                        <select is="emby-select" id="InferenceDevice" class="emby-select-withcolor emby-select">
+                            <option value="Cpu">CPU (works everywhere)</option>
+                            <option value="Gpu">GPU: Intel (Arc, Iris Xe, UHD) on Linux and Windows, or Apple Silicon</option>
+                        </select>
+                        <div class="fieldDescription">Many times faster on a supported GPU. Intel GPUs need a one-off 70 MB download (Intel's OpenVINO runtime). Other GPUs (NVIDIA, AMD) fall back to the CPU. <span id="sxrDevice"></span></div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="InferenceThreads">CPU threads</label>
+                        <input is="emby-input" type="number" id="InferenceThreads" min="1" max="32" />
+                        <div class="fieldDescription">CPU threads for face and voice recognition when they run on the CPU, for each title being analysed. Keep it low to leave room for streaming.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="MaxConcurrentAnalyses">Titles analysed at once</label>
+                        <input is="emby-input" type="number" id="MaxConcurrentAnalyses" min="1" max="4" />
+                        <div class="fieldDescription">How many titles are analysed at the same time (1 to 4). The models are loaded once and shared; each extra title adds a video decode and its CPU work. 2 suits a GPU with room to spare. Someone pressing play still jumps the queue.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="HardwareDecode" /><span>Decode video on the GPU (VAAPI)</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">Falls back to the CPU automatically if the GPU cannot decode a file.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="VaapiDevice">VAAPI device</label>
+                        <input is="emby-input" type="text" id="VaapiDevice" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="TmdbApiKey">TMDb API key (optional)</label>
+                        <input is="emby-input" type="text" id="TmdbApiKey" autocomplete="off" />
+                        <div class="fieldDescription">Extra actor photos (different ages and looks) make recognition much better, especially for older films. Left empty, X-Ray uses the key Jellyfin's own TMDb provider uses.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="LearnFromMatches" /><span>Learn from confident matches</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">A face recognised with high confidence becomes an extra reference for that actor, which helps later episodes and sequels. Faces you name by hand always count.</div>
+                    </div>
+                    <details>
+                        <summary style="cursor:pointer;margin:1em 0">Advanced tuning</summary>
+                        <div class="inputContainer"><label class="inputLabel" for="SampleFps">Frames per second sampled</label><input is="emby-input" type="number" step="0.25" min="0.25" max="4" id="SampleFps" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="DecodeWidth">Decode width (px)</label><input is="emby-input" type="number" step="32" min="480" max="1920" id="DecodeWidth" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="MinFaceHeight">Smallest face (px at decode width)</label><input is="emby-input" type="number" min="16" max="200" id="MinFaceHeight" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="ClusterThreshold">Same-person similarity</label><input is="emby-input" type="number" step="0.01" min="0.2" max="0.9" id="ClusterThreshold" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="IdentifyThreshold">Naming threshold</label><input is="emby-input" type="number" step="0.01" min="0.1" max="0.9" id="IdentifyThreshold" /><div class="fieldDescription">Higher: fewer names, fewer mistakes.</div></div>
+                        <div class="inputContainer"><label class="inputLabel" for="WeakIdentifyThreshold">Low-confidence naming threshold</label><input is="emby-input" type="number" step="0.01" min="0" max="0.9" id="WeakIdentifyThreshold" /><div class="fieldDescription">Accepts weaker matches only when they clearly beat every other actor. 0 turns this off.</div></div>
+                        <div class="inputContainer"><label class="inputLabel" for="IdentifyMargin">Lead over the runner-up</label><input is="emby-input" type="number" step="0.01" min="0" max="0.5" id="IdentifyMargin" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="SceneGapSeconds">Scene gap bridged (seconds)</label><input is="emby-input" type="number" min="0" max="60" id="SceneGapSeconds" /></div>
+                        <div class="inputContainer"><label class="inputLabel" for="MinScreenTimeSeconds">Minimum screen time to list someone (seconds)</label><input is="emby-input" type="number" min="0" max="120" id="MinScreenTimeSeconds" /></div>
+                    </details>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Voices</h3>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="VoicesEnabled" /><span>Recognise who is speaking</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">Places voice actors (cartoons) and costumed or off-screen characters in their scenes. Voices are named automatically from subtitle speaker tags, from names said in the dialogue, and from voices learned in your other titles. Needs text subtitles.</div>
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="VoiceDevice">Run voice recognition on</label>
+                        <select is="emby-select" id="VoiceDevice" class="emby-select-withcolor emby-select">
+                            <option value="Cpu">CPU (works everywhere)</option>
+                            <option value="Gpu">GPU: Intel (Arc, Iris Xe, UHD) on Linux and Windows, or Apple Silicon</option>
+                        </select>
+                        <div class="fieldDescription">Same GPUs as faces, set separately. Each subtitle line takes milliseconds instead of a few hundred on a GPU; the first title after a restart spends about 20 seconds preparing the GPU. <span id="sxrVoiceDevice"></span></div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Music</h3>
+                    <div class="checkboxContainer">
+                        <label><input is="emby-checkbox" type="checkbox" id="MusicEnabled" /><span>Identify music</span></label>
+                    </div>
+                    <div class="fieldDescription">Songs in your Jellyfin music libraries are recognised for free once the <i>Index music library</i> task has run. Music is matched by audio fingerprint (Chromaprint) rather than a neural network, so it always runs on the CPU; it takes seconds per title.</div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="AuddApiToken">AudD API token (optional)</label>
+                        <input is="emby-input" type="text" id="AuddApiToken" autocomplete="off" />
+                        <div class="fieldDescription">Identifies songs you don't own via <a is="emby-linkbutton" class="button-link" href="https://audd.io" target="_blank" rel="noopener">audd.io</a> (paid per request). Moments the subtitles mark with &#9834; are tried first.</div>
+                    </div>
+                    <div class="inputContainer"><label class="inputLabel" for="AuddSampleIntervalSeconds">Seconds between AudD samples</label><input is="emby-input" type="number" min="20" max="600" id="AuddSampleIntervalSeconds" /></div>
+                    <div class="inputContainer"><label class="inputLabel" for="AuddMaxRequestsPerItem">AudD requests per title (cap)</label><input is="emby-input" type="number" min="0" max="500" id="AuddMaxRequestsPerItem" /></div>
+                </div>
+
+                <div class="verticalSection" id="sxrSharing">
+                    <h3 class="sectionTitle">Sharing</h3>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="SharingEnabled" /><span><b>Share X-Ray data with other Jellyfin servers.</b></span></label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            <p>When this is on, your server sends what it learns about each title to the X-Ray sharing service, and gets other servers' results so it can skip analysing titles they already did.</p>
+                            <p><b>Sent:</b> which film or episode (its TMDb/IMDb/TVDb ids, edition and runtime), the TMDb ids of the people found and when they appear, scene boundaries, songs found, the X-Ray version, and short audio fingerprints used to line results up with other copies of the same title. For faces X-Ray couldn't name in films and episodes, a face signature (a list of numbers describing the face, not a picture) is sent so other servers' results can name them. Those signatures are never shown to anyone, never sent to other servers, and are deleted once the face is named.</p>
+                            <p><b>Never sent:</b> pictures of faces, voice data, anything from home videos or other titles without a TMDb or IMDb id, file names or paths, users, or what anyone watched.</p>
+                            <p>The service will know which titles your server has. Sharing works both ways: you can't receive without contributing, or contribute without receiving. Turning this off stops all sending and receiving immediately.</p>
+                        </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label><input is="emby-checkbox" type="checkbox" id="SharingUseOtherCuts" /><span>Use shared data from another cut of a title while it waits for analysis</span></label>
+                        <div class="fieldDescription checkboxFieldDescription">When someone starts watching an extended or theatrical cut nobody shared yet, X-Ray can show the shared data of another cut for the scenes the two have in common. The title is still analysed here later.</div>
+                    </div>
+                    <div class="inputContainer" id="sxrInviteBox">
+                        <label class="inputLabel" for="sxrInvite">Invite</label>
+                        <input is="emby-input" type="text" id="sxrInvite" autocomplete="off" />
+                        <div class="fieldDescription">Sharing is for invited servers only. Paste the invite you were given (it starts with <code>xray1.</code>), tick the box above and save.</div>
+                    </div>
+                    <p id="sxrShareStatus" class="fieldDescription"></p>
+                    <p id="sxrShareError" class="fieldDescription" style="color:#e57373"></p>
+                    <div id="sxrShareButtons" style="display:none">
+                        <button is="emby-button" type="button" id="sxrReanalyse" class="raised emby-button"><span>Re-analyse received titles locally</span></button>
+                        <div class="fieldDescription">Queues every title that came from the sharing service for analysis on this server, replacing the shared copy.</div>
+                        <button is="emby-button" type="button" id="sxrLeave" class="raised emby-button"><span>Leave</span></button>
+                        <button is="emby-button" type="button" id="sxrWithdraw" class="raised emby-button"><span>Leave and withdraw my contributions</span></button>
+                        <div class="fieldDescription"><i>Leave</i> deletes this server's membership, credit, the list of titles it has, and every face signature it sent; its past results stay as anonymous votes. <i>Leave and withdraw</i> also deletes every result it contributed. Titles already received stay on this server either way.</div>
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '5b3f1e9a-7c42-4d1b-9a60-2f8e4c7d3a11';
+            var fields = ['ModelPack', 'InferenceDevice', 'VoiceDevice', 'InferenceThreads', 'MaxConcurrentAnalyses', 'VaapiDevice', 'TmdbApiKey', 'SampleFps', 'DecodeWidth', 'MinFaceHeight',
+                'ClusterThreshold', 'IdentifyThreshold', 'WeakIdentifyThreshold', 'IdentifyMargin', 'SceneGapSeconds', 'MinScreenTimeSeconds',
+                'AuddApiToken', 'AuddSampleIntervalSeconds', 'AuddMaxRequestsPerItem'];
+            var checks = ['VoicesEnabled', 'SkipAnimation', 'AnalyzeOnPlayback', 'AnalyzeNewMedia', 'HardwareDecode', 'LearnFromMatches', 'MusicEnabled', 'SharingUseOtherCuts'];
+            var page = document.querySelector('#SceneXrayConfigPage');
+
+            function libraryBoxes(folders, selected, types, name) {
+                var box = document.createElement('div');
+                folders.filter(function (f) { return types.indexOf(f.CollectionType) >= 0; }).forEach(function (f) {
+                    var label = document.createElement('label');
+                    label.className = 'checkboxContainer';
+                    label.style.display = 'block';
+                    var input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.dataset.group = name;
+                    input.value = f.ItemId;
+                    input.checked = selected.indexOf(f.ItemId) >= 0;
+                    var span = document.createElement('span');
+                    span.textContent = f.Name + (name === 'music' ? ' (music)' : '');
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    box.appendChild(label);
+                });
+                return box;
+            }
+
+            var sharingJoined = false;
+
+            function refreshSharing() {
+                ApiClient.fetch({ url: ApiClient.getUrl('SceneXray/Sharing/Status'), type: 'GET', dataType: 'json' }).then(function (r) {
+                    sharingJoined = !!r.Joined;
+                    page.querySelector('#sxrInviteBox').style.display = sharingJoined ? 'none' : '';
+                    page.querySelector('#sxrShareButtons').style.display = (sharingJoined || r.Received) ? '' : 'none';
+                    page.querySelector('#sxrLeave').style.display = sharingJoined ? '' : 'none';
+                    page.querySelector('#sxrWithdraw').style.display = sharingJoined ? '' : 'none';
+                    page.querySelector('#sxrReanalyse').style.display = r.Received ? '' : 'none';
+                    var line = '';
+                    if (r.Enabled && r.Status) {
+                        var st = r.Status;
+                        line = (st.state === 'member' ? 'Member' : st.state === 'negative' ? 'Member, out of credit' : st.state === 'quarantined' ? 'Paused: recent results disagreed with other servers' : st.state) +
+                            ' \u00b7 ' + st.balance.toLocaleString() + ' minutes of credit' + (st.held ? ' (+' + st.held.toLocaleString() + ' held until confirmed)' : '') +
+                            ' \u00b7 ' + st.contributed.toLocaleString() + ' titles contributed \u00b7 ' + st.received.toLocaleString() + ' received';
+                    } else if (r.Enabled) {
+                        line = 'Member \u00b7 the sharing service is not reachable right now; titles are analysed locally.';
+                    } else if (sharingJoined) {
+                        line = 'Sharing is off. Your membership is kept, so turning it back on resumes it.';
+                    }
+                    page.querySelector('#sxrShareStatus').textContent = line;
+                }).catch(function () { /* status is optional */ });
+            }
+
+            function joinIfNeeded() {
+                var box = page.querySelector('#SharingEnabled');
+                var invite = page.querySelector('#sxrInvite').value.trim();
+                page.querySelector('#sxrShareError').textContent = '';
+                if (!box.checked || sharingJoined) {
+                    return Promise.resolve(true);
+                }
+                if (!invite) {
+                    box.checked = false;
+                    page.querySelector('#sxrShareError').textContent = 'Sharing needs an invite: paste it first.';
+                    return Promise.resolve(false);
+                }
+                return ApiClient.fetch({
+                    url: ApiClient.getUrl('SceneXray/Sharing/Join'), type: 'POST', dataType: 'json',
+                    data: JSON.stringify({ Invite: invite }), contentType: 'application/json'
+                }).then(function () { sharingJoined = true; page.querySelector('#sxrInvite').value = ''; return true; }, function (e) {
+                    box.checked = false;
+                    var show = function (msg) { page.querySelector('#sxrShareError').textContent = msg || 'Could not join the sharing service.'; };
+                    if (e && e.json) { e.json().then(function (b) { show(b.Error); }, function () { show(); }); } else { show(); }
+                    return false;
+                });
+            }
+
+            function shareAction(url, question) {
+                if (!window.confirm(question)) { return; }
+                Dashboard.showLoadingMsg();
+                page.querySelector('#sxrShareError').textContent = '';
+                ApiClient.fetch({ url: ApiClient.getUrl(url), type: 'POST', dataType: 'json' }).then(function (r) {
+                    Dashboard.hideLoadingMsg();
+                    if (r && r.Queued !== undefined) { page.querySelector('#sxrShareStatus').textContent = r.Queued + ' titles queued for local analysis.'; }
+                    if (r && r.Left) { page.querySelector('#SharingEnabled').checked = false; refreshSharing(); }
+                }, function (e) {
+                    Dashboard.hideLoadingMsg();
+                    var show = function (msg) { page.querySelector('#sxrShareError').textContent = msg || 'That did not work.'; };
+                    if (e && e.json) { e.json().then(function (b) { show(b.Error); }, function () { show(); }); } else { show(); }
+                });
+            }
+
+            page.querySelector('#sxrReanalyse').addEventListener('click', function () {
+                shareAction('SceneXray/Sharing/ReanalyseReceived', 'Analyse every received title on this server? Each takes as long as any other analysis.');
+            });
+            page.querySelector('#sxrLeave').addEventListener('click', function () {
+                shareAction('SceneXray/Sharing/Leave?withdraw=false', 'Leave the sharing service? Your credit and membership are deleted; your past results stay as anonymous votes.');
+            });
+            page.querySelector('#sxrWithdraw').addEventListener('click', function () {
+                shareAction('SceneXray/Sharing/Leave?withdraw=true', 'Leave and delete every result this server contributed? This cannot be undone.');
+            });
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                Promise.all([ApiClient.getPluginConfiguration(pluginId), ApiClient.getVirtualFolders()]).then(function (r) {
+                    var config = r[0], folders = r[1];
+                    fields.forEach(function (f) { page.querySelector('#' + f).value = config[f]; });
+                    checks.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
+                    page.querySelector('#SharingEnabled').checked = !!config.SharingEnabled;
+                    var libs = page.querySelector('#sxrLibraries');
+                    libs.textContent = '';
+                    libs.appendChild(libraryBoxes(folders, config.LibraryIds || [], ['movies', 'tvshows', 'mixed', null], 'video'));
+                    libs.appendChild(libraryBoxes(folders, config.MusicLibraryIds || [], ['music'], 'music'));
+                    Dashboard.hideLoadingMsg();
+                });
+                refreshSharing();
+                ApiClient.fetch({ url: ApiClient.getUrl('SceneXray/Summary'), type: 'GET', dataType: 'json' }).then(function (s) {
+                    page.querySelector('#sxrSummary').textContent = s.Analyzed + ' titles analysed, ' + s.Pending + ' waiting, ' +
+                        s.Queued + ' in the queue now, ' + s.SongsIndexed + ' songs indexed.';
+                    page.querySelector('#sxrDevice').textContent = 'Now: ' + s.Device + '.';
+                    page.querySelector('#sxrVoiceDevice').textContent = 'Now: ' + s.VoiceDevice + '.';
+                }).catch(function () { /* summary is optional */ });
+            });
+
+            // A field that fails the browser's checks blocks Save; if it sits in a closed section the
+            // browser's message has nowhere to show, so open the section first.
+            page.querySelector('#SceneXrayConfigForm').addEventListener('invalid', function (e) {
+                var details = e.target.closest('details');
+                if (details && !details.open) {
+                    details.open = true;
+                    setTimeout(function () { e.target.reportValidity(); }, 0);
+                }
+            }, true);
+
+            page.querySelector('#SceneXrayConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+                joinIfNeeded().then(function () { return ApiClient.getPluginConfiguration(pluginId); }).then(function (config) {
+                    fields.forEach(function (f) {
+                        var el = page.querySelector('#' + f);
+                        config[f] = el.type === 'number' ? Number(el.value) : el.value;
+                    });
+                    checks.forEach(function (f) { config[f] = page.querySelector('#' + f).checked; });
+                    config.SharingEnabled = page.querySelector('#SharingEnabled').checked && sharingJoined;
+                    config.LibraryIds = Array.prototype.map.call(page.querySelectorAll('input[data-group="video"]:checked'), function (i) { return i.value; });
+                    config.MusicLibraryIds = Array.prototype.map.call(page.querySelectorAll('input[data-group="music"]:checked'), function (i) { return i.value; });
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (r) { Dashboard.processPluginConfigurationUpdateResult(r); refreshSharing(); });
+                });
+                return false;
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

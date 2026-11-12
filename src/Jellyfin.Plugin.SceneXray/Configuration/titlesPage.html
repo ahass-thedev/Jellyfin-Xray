@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>X-Ray titles</title>
+</head>
+<body>
+<div id="SceneXrayTitlesPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+    <style>
+        #SceneXrayTitlesPage .sxrChips { display: flex; flex-wrap: wrap; gap: .5em; margin: 1em 0; }
+        #SceneXrayTitlesPage .sxrChip { border: 1px solid rgba(128, 128, 128, .5); border-radius: 1em; padding: .3em .9em; background: none; color: inherit; cursor: pointer; font: inherit; }
+        #SceneXrayTitlesPage .sxrChip.active { background: #00a4dc; border-color: #00a4dc; color: #fff; }
+        #SceneXrayTitlesPage .sxrBar { height: .5em; border-radius: .25em; background: rgba(128, 128, 128, .3); overflow: hidden; margin-top: .5em; }
+        #SceneXrayTitlesPage .sxrBar > div { height: 100%; background: #00a4dc; }
+        #SceneXrayTitlesPage table { width: 100%; border-collapse: collapse; }
+        #SceneXrayTitlesPage th, #SceneXrayTitlesPage td { text-align: left; padding: .45em .6em; border-bottom: 1px solid rgba(128, 128, 128, .2); vertical-align: top; }
+        #SceneXrayTitlesPage th { font-weight: 600; opacity: .8; }
+        #SceneXrayTitlesPage td.num { text-align: right; white-space: nowrap; }
+        #SceneXrayTitlesPage td:first-child { min-width: 16em; }
+        #SceneXrayTitlesPage .sxrState { white-space: nowrap; }
+        #SceneXrayTitlesPage .sxrState::before { content: ''; display: inline-block; width: .6em; height: .6em; border-radius: 50%; margin-right: .4em; background: currentColor; }
+        #SceneXrayTitlesPage .done { color: #52b54b; }
+        #SceneXrayTitlesPage .outdated { color: #d8a200; }
+        #SceneXrayTitlesPage .missing { color: #999; }
+        #SceneXrayTitlesPage .running, #SceneXrayTitlesPage .queued { color: #00a4dc; }
+        #SceneXrayTitlesPage .failed { color: #cc3333; }
+        #SceneXrayTitlesPage .sxrTable { overflow-x: auto; }
+        #SceneXrayTitlesPage .sxrMuted { opacity: .7; font-size: .9em; }
+    </style>
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="verticalSection">
+                <h2 class="sectionTitle">X-Ray titles</h2>
+                <p class="fieldDescription">Which movies and episodes in the libraries X-Ray covers (see <a is="emby-linkbutton" class="button-link" href="#/configurationpage?name=SceneXray">X-Ray settings</a>) have X-Ray, and which are still to do. Once this server shares X-Ray data, it also shows which titles were sent to the sharing service and which were pulled from it.</p>
+                <p id="sxrOverall"></p>
+                <div class="sxrBar"><div id="sxrBarFill" style="width: 0"></div></div>
+                <div class="sxrChips" id="sxrChips"></div>
+                <div class="sxrChips" id="sxrShareChips" style="display: none"></div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="search" id="sxrSearch" label="Search titles" autocomplete="off" />
+                </div>
+            </div>
+            <div class="sxrTable">
+                <table>
+                    <thead>
+                        <tr><th>Title</th><th>X-Ray</th><th class="num">People</th><th class="num">Voices</th><th class="num">Songs</th><th>Analysed</th><th id="sxrShareHead" style="display: none">Sharing</th><th></th></tr>
+                    </thead>
+                    <tbody id="sxrRows"></tbody>
+                </table>
+            </div>
+            <p id="sxrEmpty" class="fieldDescription" style="display: none">No titles match.</p>
+            <button is="emby-button" type="button" id="sxrMore" class="raised button-alt block" style="display: none"><span>Show more</span></button>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var page = document.querySelector('#SceneXrayTitlesPage');
+            var pageSize = 100;
+            var filter = 'all';
+            var sharing = ''; // '', sent, sending or received
+            var sharingUsed = false;
+            var shown = 0;
+            var searchTimer = null;
+            var refreshTimer = null;
+            var loading = false;
+            var latest = 0; // only the newest request's answer is shown
+
+            var labels = {
+                done: 'X-Ray ready', outdated: 'Ready, will be refreshed', missing: 'Not yet', running: 'Analysing', queued: 'Queued', failed: 'Failed'
+            };
+            var chips = [
+                ['all', 'All', 'Total'], ['done', 'Ready', 'Done'], ['outdated', 'To refresh', 'Outdated'], ['missing', 'No X-Ray yet', 'Missing'],
+                ['active', 'In progress', null], ['failed', 'Failed', 'Failed']
+            ];
+            var shareChips = [['sent', 'Sent to sharing', 'Sent'], ['sending', 'Waiting to send', 'Sending'], ['received', 'Pulled from sharing', 'Received']];
+            var shareLabels = { sent: 'Sent', sending: 'Waiting to send', received: 'Pulled', local: '' };
+
+            function cell(row, text, className) {
+                var td = document.createElement('td');
+                td.textContent = text;
+                if (className) { td.className = className; }
+                row.appendChild(td);
+                return td;
+            }
+
+            function stateText(t) {
+                if (t.State === 'running') { return labels.running + ' ' + Math.round(t.Progress) + '%'; }
+                if (t.State === 'queued') { return labels.queued + ' (#' + (t.Position + 1) + ')'; }
+                return labels[t.State];
+            }
+
+            function analyse(id, button) {
+                button.disabled = true;
+                ApiClient.fetch({ url: ApiClient.getUrl('SceneXray/Items/' + id + '/Analyze'), type: 'POST', dataType: 'json' }).then(function () {
+                    load(true);
+                }, function () {
+                    button.disabled = false;
+                    Dashboard.alert('That title could not be queued.');
+                });
+            }
+
+            function addRows(items) {
+                var body = page.querySelector('#sxrRows');
+                items.forEach(function (t) {
+                    var tr = document.createElement('tr');
+                    var title = cell(tr, t.Name + (t.Type === 'Movie' && t.Year ? ' (' + t.Year + ')' : ''));
+                    if (t.Error) {
+                        var err = document.createElement('div');
+                        err.className = 'sxrMuted';
+                        err.textContent = t.Error;
+                        title.appendChild(err);
+                    }
+                    cell(tr, stateText(t), 'sxrState ' + t.State);
+                    var has = !!t.AnalyzedAt;
+                    cell(tr, has ? t.People : '', 'num');
+                    cell(tr, has ? t.Voices : '', 'num');
+                    cell(tr, has ? t.Songs : '', 'num');
+                    cell(tr, t.AnalyzedAt ? new Date(t.AnalyzedAt).toLocaleDateString() : '', 'sxrMuted');
+                    if (sharingUsed) {
+                        cell(tr, shareLabels[t.Sharing] + (t.SharedAt ? ' ' + new Date(t.SharedAt).toLocaleDateString() : ''), 'sxrMuted');
+                    }
+                    var action = cell(tr, '');
+                    if (t.State !== 'running' && t.State !== 'queued' && t.State !== 'done') {
+                        var b = document.createElement('button');
+                        b.setAttribute('is', 'emby-button');
+                        b.type = 'button';
+                        b.className = 'raised button-submit';
+                        b.textContent = 'Analyse now';
+                        b.addEventListener('click', function () { analyse(t.Id, b); });
+                        action.appendChild(b);
+                    }
+                    body.appendChild(tr);
+                });
+            }
+
+            function renderCounts(r) {
+                var have = r.Done + r.Outdated;
+                page.querySelector('#sxrOverall').textContent = have.toLocaleString() + ' of ' + r.Total.toLocaleString() + ' titles have X-Ray (' +
+                    (r.Total ? Math.floor(100 * have / r.Total) : 0) + '%)' + (r.Running ? ', ' + r.Running + ' analysing now' : '') +
+                    (r.Queued ? ', ' + r.Queued.toLocaleString() + ' queued' : '') + '.';
+                page.querySelector('#sxrBarFill').style.width = (r.Total ? 100 * have / r.Total : 0) + '%';
+                var box = page.querySelector('#sxrChips');
+                box.textContent = '';
+                chips.forEach(function (c) {
+                    var n = c[2] ? r[c[2]] : r.Running + r.Queued;
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'sxrChip' + (filter === c[0] ? ' active' : '');
+                    b.textContent = c[1] + ' · ' + n.toLocaleString();
+                    b.addEventListener('click', function () { filter = c[0]; load(true); });
+                    box.appendChild(b);
+                });
+
+                // Sharing: only once this server has sent or pulled something.
+                sharingUsed = r.Sent + r.Sending + r.Received > 0 || sharing !== '';
+                var shareBox = page.querySelector('#sxrShareChips');
+                shareBox.style.display = sharingUsed ? '' : 'none';
+                page.querySelector('#sxrShareHead').style.display = sharingUsed ? '' : 'none';
+                shareBox.textContent = '';
+                shareChips.forEach(function (c) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'sxrChip' + (sharing === c[0] ? ' active' : '');
+                    b.textContent = c[1] + ' \u00b7 ' + r[c[2]].toLocaleString();
+                    b.addEventListener('click', function () { sharing = sharing === c[0] ? '' : c[0]; load(true); });
+                    shareBox.appendChild(b);
+                });
+            }
+
+            function load(reset, quiet) {
+                if (reset) { shown = 0; }
+                var query = { state: filter, startIndex: shown, limit: pageSize };
+                var search = page.querySelector('#sxrSearch').value.trim();
+                if (search) { query.search = search; }
+                if (sharing) { query.sharing = sharing; }
+                if (reset && !quiet) { Dashboard.showLoadingMsg(); }
+                var mine = ++latest;
+                loading = true;
+                return ApiClient.fetch({ url: ApiClient.getUrl('SceneXray/Titles', query), type: 'GET', dataType: 'json' }).then(function (r) {
+                    if (mine !== latest) { return; }
+                    loading = false;
+                    Dashboard.hideLoadingMsg();
+                    renderCounts(r);
+                    if (reset) { page.querySelector('#sxrRows').textContent = ''; }
+                    addRows(r.Items);
+                    shown += r.Items.length;
+                    page.querySelector('#sxrMore').style.display = shown < r.Matching ? '' : 'none';
+                    page.querySelector('#sxrEmpty').style.display = r.Matching ? 'none' : '';
+                }, function () {
+                    if (mine !== latest) { return; }
+                    loading = false;
+                    Dashboard.hideLoadingMsg();
+                    page.querySelector('#sxrOverall').textContent = 'Could not load the list of titles.';
+                });
+            }
+
+            page.querySelector('#sxrMore').addEventListener('click', function () { load(false); });
+            page.querySelector('#sxrSearch').addEventListener('input', function () {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(function () { load(true); }, 300);
+            });
+
+            page.addEventListener('pageshow', function () {
+                load(true);
+                // Keep progress moving while the page is open; only the first page is refreshed.
+                clearInterval(refreshTimer);
+                refreshTimer = setInterval(function () { if (!loading && shown <= pageSize && !document.hidden) { load(true, true); } }, 30000);
+            });
+            page.addEventListener('pagehide', function () { clearInterval(refreshTimer); });
+        })();
+    </script>
+</div>
+</body>
+</html>

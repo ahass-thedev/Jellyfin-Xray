@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1424"/>
+      <stop offset="1" stop-color="#1a0f2e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#00a4dc" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#00a4dc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="jf" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#aa5cc3"/>
+      <stop offset="1" stop-color="#00a4dc"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect width="1280" height="720" fill="url(#glow)"/>
+
+  <!-- A face found in the frame: detection brackets around the head -->
+  <circle cx="340" cy="265" r="92" fill="#e8ecf6"/>
+  <path d="M130 600 C130 455 210 400 340 400 C470 400 550 455 550 600 Z" fill="#e8ecf6"/>
+  <g fill="none" stroke="url(#jf)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M265 140 H215 V190"/>
+    <path d="M415 140 H465 V190"/>
+    <path d="M265 390 H215 V340"/>
+    <path d="M415 390 H465 V340"/>
+  </g>
+
+  <!-- What is playing -->
+  <g fill="url(#jf)">
+    <rect x="600" y="505" width="14" height="50" rx="7"/>
+    <rect x="626" y="470" width="14" height="120" rx="7"/>
+    <rect x="652" y="490" width="14" height="80" rx="7"/>
+    <rect x="678" y="450" width="14" height="160" rx="7"/>
+    <rect x="704" y="485" width="14" height="90" rx="7"/>
+  </g>
+
+  <text x="760" y="330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="150" font-weight="800" fill="#ffffff" letter-spacing="-3">X-Ray</text>
+  <text x="766" y="410" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="40" font-weight="500" fill="#b9c2d8">Who's on screen.</text>
+  <text x="766" y="465" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="40" font-weight="500" fill="#b9c2d8">What's playing.</text>
+</svg>

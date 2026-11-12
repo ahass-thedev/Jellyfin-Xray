@@ -1,0 +1,101 @@
+# One pipeline per change:
+#  - merge request: test + package (the zip is downloadable from the job);
+#  - merge to main: release. If the csproj AssemblyVersion has no GitHub release yet, it is built
+#    and published; either way the GitHub side (manifest.json, the plugin repository URL people add
+#    to Jellyfin) is checked and repaired. Needs the masked, protected GITHUB_TOKEN variable.
+# Branch pushes without an MR, and tags, start no pipeline.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+stages: [test, package, release]
+
+default:
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  tags: [docker]
+
+# Secrets in the tree fail the merge request and the release. The GitHub copy of this repo is
+# public, so nothing that looks like a password, key or token may be committed: services that
+# need one get it from Infisical or a masked CI variable at run time.
+secret-scan:
+  stage: test
+  image:
+    name: zricethezav/gitleaks:v8.21.2
+    entrypoint: [""]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - gitleaks dir --config .gitleaks.toml --redact --verbose --exit-code 1 .
+
+test:
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - dotnet test tests/Jellyfin.Plugin.SceneXray.Tests --nologo
+
+# The sharing service (server/, docs/shared-data-design.md) against a real PostgreSQL 17 +
+# pgvector, only reachable from this job and gone with it, so it trusts connections: no password
+# to keep anywhere. The .NET jobs run
+# one after another: two builds at once on one runner ran it out of memory.
+server-test:
+  stage: test
+  needs: [test]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  services:
+    - name: pgvector/pgvector:pg17
+      alias: postgres
+      variables: {POSTGRES_USER: xray, POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: xray}
+  variables:
+    XRAY_SHARE_TEST_DB: "Host=postgres;Username=xray;Database=xray"
+  script:
+    - dotnet test server/Xray.Share.Server.Tests --nologo
+
+# The service's image. Merge requests only build it; main also pushes it to this project's
+# registry (nothing deploys it: that is the proxmox repo's Flux manifests, phase 4).
+server-image:
+  stage: package
+  needs: [{job: package, optional: true}]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: [server/**/*, src/Jellyfin.Plugin.SceneXray.Sharing/**/*, .gitlab-ci.yml]
+      variables: {PUSH_LATEST: "no"}
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes: [server/**/*, src/Jellyfin.Plugin.SceneXray.Sharing/**/*]
+      variables: {PUSH_LATEST: "yes"}
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - AUTH=$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+    - printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+    - if [ "$PUSH_LATEST" = yes ]; then EXTRA="--destination $CI_REGISTRY_IMAGE/share-server:latest"; else EXTRA=--no-push; fi
+    - /kaniko/executor --context "$CI_PROJECT_DIR" --dockerfile server/Dockerfile --destination "$CI_REGISTRY_IMAGE/share-server:$CI_COMMIT_SHORT_SHA" $EXTRA
+
+package:
+  stage: package
+  needs: [{job: server-test, optional: true}]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - apt-get update -qq && apt-get install -y -qq zip >/dev/null
+    - ./build.sh
+  artifacts:
+    name: "X-Ray_${CI_COMMIT_SHORT_SHA}"
+    paths: ["dist/xray_*.zip"]
+    expire_in: 30 days
+
+release:
+  stage: release
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  resource_group: github-release
+  script:
+    - apt-get update -qq && apt-get install -y -qq zip >/dev/null
+    - ./build.sh
+    - dotnet run scripts/Publish.cs
