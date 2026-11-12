@@ -1,0 +1,19 @@
+# gitleaks configuration (CI job secret-scan). The default rules miss plain passwords in
+# connection strings and YAML, which is how two placeholder database passwords reached the
+# public GitHub copy in 2026-11. A value read from the environment ($VAR, ${VAR}) passes.
+title = "Jellyfin-Xray"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "connection-string-password"
+description = "Password in a connection string"
+regex = '''(?i)\b(?:password|pwd)=([^;"'\s$<{][^;"'\s]{2,})'''
+secretGroup = 1
+
+[[rules]]
+id = "yaml-env-password"
+description = "Literal password or secret in YAML or an environment block"
+regex = '''(?:\b[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET)|__\w*(?:Password|Secret))["']?\s*:\s*["']?([^\s"'$<{#][^\s"',}]{2,})'''
+secretGroup = 1
