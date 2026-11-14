@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ahass-thedev/Jellyfin-Xray/main/images/logo.png",
     "versions": [
       {
+        "version": "1.6.3.1",
+        "changelog": "X-Ray 1.6.3.1: face crops for unknown people no longer exhaust the server\u0027s memory\n\nSee merge request achmadoo/Jellyfin-Xray!30",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/ahass-thedev/Jellyfin-Xray/releases/download/v1.6.3.1/xray_1.6.3.1.zip",
+        "checksum": "7cde47b7dcfa5e37221773309016b0f5",
+        "timestamp": "2026-11-14T15:40:58Z"
+      },
+      {
         "version": "1.6.3.0",
         "changelog": "X-Ray 1.6.3.0: share titles analysed before joining\n\nSee merge request achmadoo/Jellyfin-Xray!26",
         "targetAbi": "12.3.0.0",
